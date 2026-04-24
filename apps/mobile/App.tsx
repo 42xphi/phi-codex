@@ -3,7 +3,9 @@ import * as Updates from 'expo-updates';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActionSheetIOS,
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -11,10 +13,13 @@ import {
   Platform,
   Pressable,
   SafeAreaView,
+  SectionList,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -42,10 +47,69 @@ type SearchMatch = {
   text: string;
 };
 
+type GitStatusEntry = {
+  path: string;
+  code: string;
+  fromPath?: string;
+};
+
+type GitCommit = {
+  hash: string;
+  subject: string;
+};
+
+type ThreadSummary = {
+  id: string;
+  preview: string;
+  cwd: string;
+  createdAt: number | null;
+  updatedAt: number | null;
+  statusType: string | null;
+  name: string | null;
+};
+
+type ApprovalRequestPayload = {
+  requestId: string;
+  kind: 'command' | 'fileChange' | 'permissions' | 'unknown';
+  title: string;
+  detail: string;
+  data?: any;
+};
+
 type ServerMessage =
   | { type: 'ready'; sessionId: string; model: string; clientId: string }
+  | { type: 'thread_active'; threadId: string; cwd: string; model: string }
+  | {
+      type: 'threads';
+      requestId: string;
+      threads: ThreadSummary[];
+      nextCursor?: string;
+    }
+  | {
+      type: 'approval_request';
+      requestId: string;
+      kind: 'command' | 'fileChange' | 'permissions' | 'unknown';
+      title: string;
+      detail: string;
+      data?: any;
+    }
   | { type: 'workspace_info'; rootName: string; maxFileBytes: number }
   | { type: 'history'; messages: ChatMessage[] }
+  | {
+      type: 'git_status';
+      requestId: string;
+      branch: string;
+      entries: GitStatusEntry[];
+      hiddenCount?: number;
+    }
+  | {
+      type: 'git_diff';
+      requestId: string;
+      path: string;
+      diff: string;
+      truncated?: boolean;
+    }
+  | { type: 'git_log'; requestId: string; commits: GitCommit[] }
   | { type: 'dir_list'; requestId: string; path: string; entries: WorkspaceEntry[] }
   | {
       type: 'file_content';
@@ -86,6 +150,7 @@ const STORAGE_KEYS = {
   wsUrl: 'codex_remote_ws_url',
   wsUrlOverride: 'codex_remote_ws_url_override_v1',
   token: 'codex_remote_token',
+  tokenOverride: 'codex_remote_token_override_v1',
   clientId: 'codex_remote_client_id',
   messages: 'codex_remote_messages_v1',
 } as const;
@@ -117,6 +182,12 @@ function uniqStrings(values: string[]) {
   return out;
 }
 
+function normalizeClientIdInput(raw: string) {
+  const trimmed = raw.trim();
+  const safe = trimmed.replace(/[^a-zA-Z0-9_-]/g, '');
+  return safe.slice(0, 80);
+}
+
 function guessWsUrlFromBundle(): string | null {
   if (Platform.OS === 'web') return null;
   try {
@@ -137,7 +208,7 @@ function defaultWsUrl(): string {
   const envList = parseWsUrlList(process.env.EXPO_PUBLIC_WS_URLS);
   if (envList.length > 0) return envList[0];
   if (Platform.OS === 'web') return 'ws://localhost:8787';
-  return guessWsUrlFromBundle() ?? '';
+  return guessWsUrlFromBundle() ?? 'wss://ios.phi.pe';
 }
 
 function withQueryParam(wsUrl: string, key: string, value: string) {
@@ -177,13 +248,86 @@ function hostLabel(rawUrl: string) {
   }
 }
 
+function basenameFromPath(rawPath: string | null | undefined) {
+  const value = (rawPath ?? '').trim();
+  if (!value) return '';
+  const trimmed = value.replace(/\/+$/, '');
+  const parts = trimmed.split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : trimmed;
+}
+
+type MessageBlock =
+  | { type: 'text'; text: string }
+  | { type: 'code'; lang?: string; code: string };
+
+function parseMessageBlocks(rawText: string): MessageBlock[] {
+  const text = rawText ?? '';
+  if (!text.includes('```')) return [{ type: 'text', text }];
+
+  const blocks: MessageBlock[] = [];
+  let rest = text;
+
+  while (rest.length > 0) {
+    const fenceStart = rest.indexOf('```');
+    if (fenceStart === -1) {
+      blocks.push({ type: 'text', text: rest });
+      break;
+    }
+
+    if (fenceStart > 0) {
+      blocks.push({ type: 'text', text: rest.slice(0, fenceStart) });
+    }
+
+    const afterStart = rest.slice(fenceStart + 3);
+    const fenceEnd = afterStart.indexOf('```');
+    if (fenceEnd === -1) {
+      blocks.push({ type: 'text', text: rest.slice(fenceStart) });
+      break;
+    }
+
+    const fenceBody = afterStart.slice(0, fenceEnd);
+    rest = afterStart.slice(fenceEnd + 3);
+
+    const firstNewline = fenceBody.indexOf('\n');
+    let lang: string | undefined;
+    let code = fenceBody;
+    if (firstNewline !== -1) {
+      const firstLine = fenceBody.slice(0, firstNewline).trim();
+      const remaining = fenceBody.slice(firstNewline + 1);
+      if (firstLine && !firstLine.includes(' ')) {
+        lang = firstLine;
+        code = remaining;
+      }
+    }
+    code = code.replace(/\n$/, '');
+
+    blocks.push({ type: 'code', lang, code });
+  }
+
+  return blocks;
+}
+
+function formatMessageTime(iso: string | undefined) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 export default function App() {
+  const { width: windowWidth } = useWindowDimensions();
+  const showSidebars = windowWidth >= 1024;
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [connState, setConnState] = useState<ConnectionState>('disconnected');
   const [serverModel, setServerModel] = useState<string | null>(null);
   const [serverSessionId, setServerSessionId] = useState<string | null>(null);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [approvalQueue, setApprovalQueue] = useState<ApprovalRequestPayload[]>([]);
   const [clientId, setClientId] = useState('');
   const [healthCheck, setHealthCheck] = useState<HealthCheckState>({ status: 'idle' });
   const [updateBanner, setUpdateBanner] = useState<string | null>(null);
@@ -194,9 +338,29 @@ export default function App() {
   const [lastClose, setLastClose] = useState<WsCloseInfo | null>(null);
 
   const [settingsOpen, setSettingsOpen] = useState(() => defaultWsUrl().length === 0);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [wsUrl, setWsUrl] = useState(defaultWsUrl);
   const [token, setToken] = useState(process.env.EXPO_PUBLIC_CODEX_TOKEN ?? '');
   const [activeBaseUrl, setActiveBaseUrl] = useState('');
+
+  const [threadsOpen, setThreadsOpen] = useState(false);
+  const [threadsLoading, setThreadsLoading] = useState(false);
+  const [threadsSearch, setThreadsSearch] = useState('');
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [projectCollapsed, setProjectCollapsed] = useState<Record<string, boolean>>({});
+
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [activityTab, setActivityTab] = useState<'status' | 'log'>('status');
+  const [gitBranch, setGitBranch] = useState<string | null>(null);
+  const [gitHiddenCount, setGitHiddenCount] = useState(0);
+  const [gitEntries, setGitEntries] = useState<GitStatusEntry[]>([]);
+  const [gitCommits, setGitCommits] = useState<GitCommit[]>([]);
+  const [gitStatusLoading, setGitStatusLoading] = useState(false);
+  const [gitLogLoading, setGitLogLoading] = useState(false);
+  const [gitDiffPath, setGitDiffPath] = useState<string | null>(null);
+  const [gitDiffText, setGitDiffText] = useState('');
+  const [gitDiffTruncated, setGitDiffTruncated] = useState(false);
+  const [gitDiffLoading, setGitDiffLoading] = useState(false);
 
   const [filesOpen, setFilesOpen] = useState(false);
   const [filesTab, setFilesTab] = useState<'browse' | 'search'>('browse');
@@ -217,6 +381,7 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const streamingAssistantIdRef = useRef<string | null>(null);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  const isNearBottomRef = useRef(true);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -227,12 +392,77 @@ export default function App() {
   const browseRequestIdRef = useRef<string | null>(null);
   const fileRequestIdRef = useRef<string | null>(null);
   const searchRequestIdRef = useRef<string | null>(null);
+  const gitStatusRequestIdRef = useRef<string | null>(null);
+  const gitDiffRequestIdRef = useRef<string | null>(null);
+  const gitLogRequestIdRef = useRef<string | null>(null);
+  const threadsRequestIdRef = useRef<string | null>(null);
+  const filesWorkspaceKeyRef = useRef<string | null>(null);
+  const threadsRefreshAtRef = useRef(0);
 
   const candidateBaseUrls = useMemo(() => {
     const envList = parseWsUrlList(process.env.EXPO_PUBLIC_WS_URLS);
     const envUrl = process.env.EXPO_PUBLIC_WS_URL?.trim();
     return uniqStrings([wsUrl.trim(), ...(envUrl ? [envUrl] : []), ...envList]);
   }, [wsUrl]);
+
+  const projectGroups = useMemo(() => {
+    const term = threadsSearch.trim().toLowerCase();
+    const byCwd = new Map<string, ThreadSummary[]>();
+
+    for (const t of threads) {
+      const cwd = (t.cwd ?? '').trim() || '(unknown)';
+      const list = byCwd.get(cwd) ?? [];
+      list.push(t);
+      byCwd.set(cwd, list);
+    }
+
+    const groups = Array.from(byCwd.entries()).map(([cwd, list]) => {
+      const sortedThreads = [...list].sort((a, b) => {
+        const aTs = a.updatedAt ?? a.createdAt ?? 0;
+        const bTs = b.updatedAt ?? b.createdAt ?? 0;
+        return bTs - aTs;
+      });
+      const lastUpdated = sortedThreads.length
+        ? sortedThreads[0].updatedAt ?? sortedThreads[0].createdAt ?? 0
+        : 0;
+      const title = basenameFromPath(cwd) || cwd;
+      return { cwd, title, threads: sortedThreads, lastUpdated };
+    });
+
+    groups.sort((a, b) => {
+      if (a.lastUpdated !== b.lastUpdated) return b.lastUpdated - a.lastUpdated;
+      return a.title.localeCompare(b.title);
+    });
+
+    if (!term) return groups;
+
+    return groups
+      .map((group) => {
+        const folderMatch =
+          group.title.toLowerCase().includes(term) || group.cwd.toLowerCase().includes(term);
+        if (folderMatch) return group;
+
+        const filteredThreads = group.threads.filter((t) => {
+          const title = (t.name?.trim() || t.preview?.trim() || '').toLowerCase();
+          return title.includes(term) || t.id.toLowerCase().includes(term);
+        });
+        if (!filteredThreads.length) return null;
+        return { ...group, threads: filteredThreads };
+      })
+      .filter(Boolean) as typeof groups;
+  }, [threads, threadsSearch]);
+
+  const projectSections = useMemo(
+    () =>
+      projectGroups.map((g) => ({
+        title: g.title,
+        cwd: g.cwd,
+        threadCount: g.threads.length,
+        lastUpdated: g.lastUpdated,
+        data: projectCollapsed[g.cwd] ? [] : g.threads,
+      })),
+    [projectGroups, projectCollapsed],
+  );
 
   const effectiveUrlPreview = useMemo(() => {
     const baseUrl = (activeBaseUrl || wsUrl).trim();
@@ -260,20 +490,34 @@ export default function App() {
       const storedUrl = await AsyncStorage.getItem(STORAGE_KEYS.wsUrl);
       const storedUrlOverride = await AsyncStorage.getItem(STORAGE_KEYS.wsUrlOverride);
       const storedToken = await AsyncStorage.getItem(STORAGE_KEYS.token);
+      const storedTokenOverride = await AsyncStorage.getItem(STORAGE_KEYS.tokenOverride);
       const storedClientId = await AsyncStorage.getItem(STORAGE_KEYS.clientId);
       const storedMessages = await AsyncStorage.getItem(STORAGE_KEYS.messages);
       const urlOverrideEnabled = storedUrlOverride === '1';
+      const tokenOverrideEnabled = storedTokenOverride === '1';
       const envDefault = defaultWsUrl();
+      const envToken = (process.env.EXPO_PUBLIC_CODEX_TOKEN ?? '').trim();
 
-      if (urlOverrideEnabled) {
-        if (storedUrl) setWsUrl(storedUrl);
-      } else {
-        if (envDefault) setWsUrl(envDefault);
-        else if (storedUrl) setWsUrl(storedUrl);
-      }
-      if (storedToken) setToken(storedToken);
+      const resolvedUrl = urlOverrideEnabled
+        ? (storedUrl ?? '').trim()
+        : (envDefault || storedUrl || '').trim();
+      const resolvedToken = tokenOverrideEnabled
+        ? (storedToken ?? '').trim()
+        : (envToken || storedToken || '').trim();
+
+      if (resolvedUrl) setWsUrl(resolvedUrl);
+      if (resolvedToken) setToken(resolvedToken);
+      else setToken('');
+
       if (storedClientId) {
-        setClientId(storedClientId);
+        const normalized = normalizeClientIdInput(storedClientId);
+        if (normalized) {
+          setClientId(normalized);
+        } else {
+          const newId = makeId('client');
+          setClientId(newId);
+          await AsyncStorage.setItem(STORAGE_KEYS.clientId, newId);
+        }
       } else {
         const newId = makeId('client');
         setClientId(newId);
@@ -287,7 +531,7 @@ export default function App() {
         } catch {}
       }
 
-      if ((!storedUrl || !urlOverrideEnabled) && defaultWsUrl().length === 0) {
+      if (!resolvedUrl || !resolvedToken) {
         setSettingsOpen(true);
       }
       setStorageReady(true);
@@ -299,6 +543,45 @@ export default function App() {
     connect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageReady, wsUrl, token]);
+
+  useEffect(() => {
+    if (!activityOpen) return;
+    if (connState !== 'connected') return;
+    requestGitStatus();
+    requestGitLog(25);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activityOpen, connState]);
+
+  useEffect(() => {
+    if (!threadsOpen && !showSidebars) return;
+    if (connState !== 'connected') return;
+    if (threadsLoading) return;
+    if (threads.length > 0) return;
+    requestThreadsList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadsOpen, showSidebars, connState]);
+
+  useEffect(() => {
+    if (!showSidebars) return;
+    if (connState !== 'connected') return;
+    const key = (activeCwd ?? '').trim();
+    if (filesWorkspaceKeyRef.current === key && browseEntries.length > 0) return;
+    filesWorkspaceKeyRef.current = key;
+    openFiles({ showModal: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSidebars, connState, activeCwd]);
+
+  useEffect(() => {
+    if (!activeThreadId) return;
+    if (connState !== 'connected') return;
+    if (!threadsOpen && !showSidebars) return;
+    if (threadsLoading) return;
+    const now = Date.now();
+    if (now - threadsRefreshAtRef.current < 2000) return;
+    threadsRefreshAtRef.current = now;
+    requestThreadsList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeThreadId, connState, threadsOpen, showSidebars]);
 
   useEffect(() => {
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
@@ -337,6 +620,7 @@ export default function App() {
     const ws = wsRef.current;
     wsRef.current = null;
     streamingAssistantIdRef.current = null;
+    setApprovalQueue([]);
     stopPing();
     clearOpenTimeout();
     if (!keepReconnect) clearReconnectTimer();
@@ -380,7 +664,7 @@ export default function App() {
     const effectiveUrl = buildEffectiveUrl(baseUrl, token.trim(), clientId.trim());
 
     if (!effectiveUrl || !effectiveUrl.startsWith('ws')) {
-      setErrorBanner('Set a valid WebSocket URL (ws://...) in Settings.');
+      setErrorBanner('Set a valid WebSocket URL (ws:// or wss://) in Settings.');
       return;
     }
 
@@ -462,6 +746,21 @@ export default function App() {
         return;
       }
 
+      if (msg.type === 'thread_active') {
+        setActiveThreadId(msg.threadId);
+        setActiveCwd(msg.cwd);
+        if (msg.model) setServerModel(msg.model);
+        return;
+      }
+
+      if (msg.type === 'threads') {
+        if (msg.requestId === threadsRequestIdRef.current) {
+          setThreads(Array.isArray(msg.threads) ? msg.threads : []);
+          setThreadsLoading(false);
+        }
+        return;
+      }
+
       if (msg.type === 'workspace_info') {
         setWorkspaceName(msg.rootName);
         setWorkspaceMaxFileBytes(msg.maxFileBytes);
@@ -470,6 +769,49 @@ export default function App() {
 
       if (msg.type === 'history') {
         if (Array.isArray(msg.messages)) setMessages(msg.messages);
+        return;
+      }
+
+      if (msg.type === 'approval_request') {
+        const req: ApprovalRequestPayload = {
+          requestId: msg.requestId,
+          kind: msg.kind,
+          title: msg.title,
+          detail: msg.detail,
+          data: (msg as any).data,
+        };
+        setApprovalQueue((prev) => {
+          if (prev.some((p) => p.requestId === req.requestId)) return prev;
+          return [...prev, req];
+        });
+        return;
+      }
+
+      if (msg.type === 'git_status') {
+        if (msg.requestId === gitStatusRequestIdRef.current) {
+          setGitBranch(msg.branch);
+          setGitEntries(Array.isArray(msg.entries) ? msg.entries : []);
+          setGitHiddenCount(msg.hiddenCount ?? 0);
+          setGitStatusLoading(false);
+        }
+        return;
+      }
+
+      if (msg.type === 'git_log') {
+        if (msg.requestId === gitLogRequestIdRef.current) {
+          setGitCommits(Array.isArray(msg.commits) ? msg.commits : []);
+          setGitLogLoading(false);
+        }
+        return;
+      }
+
+      if (msg.type === 'git_diff') {
+        if (msg.requestId === gitDiffRequestIdRef.current) {
+          setGitDiffPath(msg.path);
+          setGitDiffText(msg.diff ?? '');
+          setGitDiffTruncated(Boolean(msg.truncated));
+          setGitDiffLoading(false);
+        }
         return;
       }
 
@@ -511,7 +853,7 @@ export default function App() {
         streamingAssistantIdRef.current = msg.messageId;
         setMessages((prev) => [
           ...prev,
-          { id: msg.messageId, role: 'assistant', text: '' },
+          { id: msg.messageId, role: 'assistant', text: '', createdAt: new Date().toISOString() },
         ]);
         return;
       }
@@ -542,6 +884,18 @@ export default function App() {
         }
         if (msg.requestId && msg.requestId === searchRequestIdRef.current) {
           setSearchLoading(false);
+        }
+        if (msg.requestId && msg.requestId === gitStatusRequestIdRef.current) {
+          setGitStatusLoading(false);
+        }
+        if (msg.requestId && msg.requestId === gitLogRequestIdRef.current) {
+          setGitLogLoading(false);
+        }
+        if (msg.requestId && msg.requestId === gitDiffRequestIdRef.current) {
+          setGitDiffLoading(false);
+        }
+        if (msg.requestId && msg.requestId === threadsRequestIdRef.current) {
+          setThreadsLoading(false);
         }
         setErrorBanner(`${msg.code}: ${msg.message}`);
         return;
@@ -578,6 +932,20 @@ export default function App() {
     if (!trimmed) return;
     setInput('');
     sendTextMessage(trimmed);
+  }
+
+  function sendApprovalDecision(requestId: string, decision: 'accept' | 'acceptForSession' | 'decline' | 'cancel') {
+    const ws = wsRef.current;
+    if (!ws || connState !== 'connected') {
+      setErrorBanner('Not connected. Cannot send approval decision.');
+      return;
+    }
+    try {
+      ws.send(JSON.stringify({ type: 'approval_response', requestId, decision }));
+      setApprovalQueue((prev) => prev.filter((p) => p.requestId !== requestId));
+    } catch {
+      setErrorBanner('Failed to send approval decision.');
+    }
   }
 
   function parentDirPath(current: string) {
@@ -660,9 +1028,9 @@ export default function App() {
     }
   }
 
-  function openFiles() {
+  function openFiles({ showModal = true }: { showModal?: boolean } = {}) {
     setFilesTab('browse');
-    setFilesOpen(true);
+    if (showModal) setFilesOpen(true);
     setSelectedFilePath(null);
     setSelectedFileContent('');
     setSelectedFileLoading(false);
@@ -688,6 +1056,188 @@ export default function App() {
     browseRequestIdRef.current = null;
     fileRequestIdRef.current = null;
     searchRequestIdRef.current = null;
+  }
+
+  function requestThreadsList(searchTerm?: string) {
+    const ws = wsRef.current;
+    if (!ws || connState !== 'connected') {
+      setErrorBanner('Not connected. Open Settings and check your WS URL.');
+      return;
+    }
+    setThreadsLoading(true);
+    const requestId = makeId('threads');
+    threadsRequestIdRef.current = requestId;
+    try {
+      ws.send(
+        JSON.stringify({
+          type: 'threads_list',
+          requestId,
+          limit: 200,
+          searchTerm: (searchTerm ?? '').trim() ? (searchTerm ?? '').trim() : undefined,
+        }),
+      );
+    } catch {
+      setThreadsLoading(false);
+      setErrorBanner('Failed to request threads.');
+    }
+  }
+
+  function openThreads() {
+    setThreadsOpen(true);
+    if (connState === 'connected' && !threadsLoading && threads.length === 0) {
+      requestThreadsList();
+    }
+  }
+
+  function closeThreads() {
+    setThreadsOpen(false);
+    setThreadsLoading(false);
+    threadsRequestIdRef.current = null;
+  }
+
+  function doSelectThread(threadId: string) {
+    const ws = wsRef.current;
+    if (!ws || connState !== 'connected') {
+      setErrorBanner('Not connected. Open Settings and check your WS URL.');
+      return;
+    }
+    setErrorBanner(null);
+    try {
+      ws.send(JSON.stringify({ type: 'thread_select', threadId }));
+      closeThreads();
+    } catch {
+      setErrorBanner('Failed to switch threads.');
+    }
+  }
+
+  function confirmSelectThread(thread: ThreadSummary) {
+    if (thread.id === activeThreadId) {
+      if (!showSidebars) closeThreads();
+      return;
+    }
+    doSelectThread(thread.id);
+  }
+
+  function doStartThread(cwd?: string) {
+    const ws = wsRef.current;
+    if (!ws || connState !== 'connected') {
+      setErrorBanner('Not connected. Open Settings and check your WS URL.');
+      return;
+    }
+    setErrorBanner(null);
+    try {
+      ws.send(JSON.stringify({ type: 'thread_start', cwd: cwd?.trim() || undefined }));
+      closeThreads();
+    } catch {
+      setErrorBanner('Failed to start a new thread.');
+    }
+  }
+
+  function confirmStartThread(cwd?: string) {
+    doStartThread(cwd);
+  }
+
+  function requestGitStatus() {
+    const ws = wsRef.current;
+    if (!ws || connState !== 'connected') {
+      setErrorBanner('Not connected. Open Settings and check your WS URL.');
+      return;
+    }
+    setGitStatusLoading(true);
+    const requestId = makeId('git_status');
+    gitStatusRequestIdRef.current = requestId;
+    try {
+      ws.send(JSON.stringify({ type: 'git_status', requestId }));
+    } catch {
+      setGitStatusLoading(false);
+      setErrorBanner('Failed to request git status.');
+    }
+  }
+
+  function requestGitLog(limit = 20) {
+    const ws = wsRef.current;
+    if (!ws || connState !== 'connected') {
+      setErrorBanner('Not connected. Open Settings and check your WS URL.');
+      return;
+    }
+    setGitLogLoading(true);
+    const requestId = makeId('git_log');
+    gitLogRequestIdRef.current = requestId;
+    try {
+      ws.send(JSON.stringify({ type: 'git_log', requestId, limit }));
+    } catch {
+      setGitLogLoading(false);
+      setErrorBanner('Failed to request git log.');
+    }
+  }
+
+  function requestGitDiff(path: string) {
+    const ws = wsRef.current;
+    if (!ws || connState !== 'connected') {
+      setErrorBanner('Not connected. Open Settings and check your WS URL.');
+      return;
+    }
+    setGitDiffLoading(true);
+    setGitDiffPath(path);
+    setGitDiffText('');
+    setGitDiffTruncated(false);
+    const requestId = makeId('git_diff');
+    gitDiffRequestIdRef.current = requestId;
+    try {
+      ws.send(JSON.stringify({ type: 'git_diff', requestId, path, maxBytes: 220_000 }));
+    } catch {
+      setGitDiffLoading(false);
+      setErrorBanner('Failed to request git diff.');
+    }
+  }
+
+  function openActivity() {
+    setActivityTab('status');
+    setActivityOpen(true);
+    setGitDiffPath(null);
+    setGitDiffText('');
+    setGitDiffTruncated(false);
+    setGitDiffLoading(false);
+  }
+
+  function closeGitDiff() {
+    setGitDiffPath(null);
+    setGitDiffText('');
+    setGitDiffTruncated(false);
+    setGitDiffLoading(false);
+    gitDiffRequestIdRef.current = null;
+  }
+
+  function closeActivity() {
+    setActivityOpen(false);
+    closeGitDiff();
+    setGitStatusLoading(false);
+    setGitLogLoading(false);
+    gitStatusRequestIdRef.current = null;
+    gitLogRequestIdRef.current = null;
+  }
+
+  function buildGitDiffContext(path: string, diff: string, truncated: boolean) {
+    const shortened =
+      diff.length > MAX_FILE_CONTEXT_CHARS
+        ? `${diff.slice(0, MAX_FILE_CONTEXT_CHARS)}\n… (truncated for chat)`
+        : diff;
+    const header = `Git diff: ${path}${truncated ? ' (server-truncated)' : ''}`;
+    return `${header}\n\n\`\`\`diff\n${shortened}\n\`\`\``;
+  }
+
+  function insertGitDiffIntoComposer() {
+    if (!gitDiffPath) return;
+    const snippet = buildGitDiffContext(gitDiffPath, gitDiffText, gitDiffTruncated);
+    setInput((prev) => (prev.trim() ? `${prev}\n\n${snippet}` : snippet));
+    closeActivity();
+  }
+
+  function sendGitDiffToChat() {
+    if (!gitDiffPath) return;
+    const snippet = buildGitDiffContext(gitDiffPath, gitDiffText, gitDiffTruncated);
+    closeActivity();
+    sendTextMessage(snippet);
   }
 
   function buildFileContext(path: string, content: string, truncated: boolean) {
@@ -721,6 +1271,108 @@ export default function App() {
     sendTextMessage(snippet);
   }
 
+  function abortAssistant() {
+    const ws = wsRef.current;
+    if (!ws || connState !== 'connected') return;
+    try {
+      ws.send(JSON.stringify({ type: 'abort' }));
+    } catch {}
+  }
+
+  async function shareText(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    try {
+      await Share.share({ message: trimmed });
+    } catch {}
+  }
+
+  function showMessageActions(message: ChatMessage) {
+    const text = message.text ?? '';
+    if (!text.trim()) return;
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Share'],
+          cancelButtonIndex: 0,
+        },
+        (index) => {
+          if (index === 1) void shareText(text);
+        },
+      );
+      return;
+    }
+
+    Alert.alert('Message', 'Share this message?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Share', onPress: () => void shareText(text) },
+    ]);
+  }
+
+  function openHeaderMenu() {
+    if (Platform.OS === 'ios') {
+      if (showSidebars) {
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            options: ['Cancel', 'New chat', 'Activity', 'Reset Chat', 'Settings'],
+            cancelButtonIndex: 0,
+            destructiveButtonIndex: 3,
+          },
+          (index) => {
+            if (index === 1) confirmStartThread();
+            if (index === 2) openActivity();
+            if (index === 3) confirmResetChat();
+            if (index === 4) setSettingsOpen(true);
+          },
+        );
+        return;
+      }
+
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Projects', 'Activity', 'Files', 'New chat', 'Reset Chat', 'Settings'],
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: 5,
+        },
+        (index) => {
+          if (index === 1) openThreads();
+          if (index === 2) openActivity();
+          if (index === 3) openFiles();
+          if (index === 4) confirmStartThread();
+          if (index === 5) confirmResetChat();
+          if (index === 6) setSettingsOpen(true);
+        },
+      );
+      return;
+    }
+
+    setMenuOpen(true);
+  }
+
+  function confirmResetChat() {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: 'Reset chat?',
+          message: 'This clears the server-side history for this Client ID.',
+          options: ['Cancel', 'Reset Chat'],
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: 1,
+        },
+        (index) => {
+          if (index === 1) resetChat();
+        },
+      );
+      return;
+    }
+
+    Alert.alert('Reset chat?', 'This clears the server-side history for this Client ID.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Reset', style: 'destructive', onPress: resetChat },
+    ]);
+  }
+
   function resetChat() {
     const ws = wsRef.current;
     if (!ws || connState !== 'connected') {
@@ -733,9 +1385,13 @@ export default function App() {
   async function saveSettings() {
     const url = wsUrl.trim();
     const tok = token.trim();
+    const nextClientId = normalizeClientIdInput(clientId) || makeId('client');
     await AsyncStorage.setItem(STORAGE_KEYS.wsUrl, url);
     await AsyncStorage.setItem(STORAGE_KEYS.wsUrlOverride, '1');
     await AsyncStorage.setItem(STORAGE_KEYS.token, tok);
+    await AsyncStorage.setItem(STORAGE_KEYS.tokenOverride, '1');
+    setClientId(nextClientId);
+    await AsyncStorage.setItem(STORAGE_KEYS.clientId, nextClientId);
     setSettingsOpen(false);
     candidateIndexRef.current = 0;
     connect();
@@ -747,9 +1403,13 @@ export default function App() {
       setErrorBanner('No default WS URL is configured in this build.');
       return;
     }
+    const envToken = (process.env.EXPO_PUBLIC_CODEX_TOKEN ?? '').trim();
     setWsUrl(envDefault);
+    if (envToken) setToken(envToken);
     await AsyncStorage.setItem(STORAGE_KEYS.wsUrl, envDefault);
     await AsyncStorage.removeItem(STORAGE_KEYS.wsUrlOverride);
+    await AsyncStorage.removeItem(STORAGE_KEYS.tokenOverride);
+    if (envToken) await AsyncStorage.removeItem(STORAGE_KEYS.token);
     setSettingsOpen(false);
     candidateIndexRef.current = 0;
   }
@@ -804,127 +1464,867 @@ export default function App() {
     }
   }
 
+  function scrollToBottom(animated: boolean) {
+    listRef.current?.scrollToEnd({ animated });
+  }
+
+  function handleChatScroll(event: any) {
+    const native = event?.nativeEvent;
+    const y = native?.contentOffset?.y ?? 0;
+    const visible = native?.layoutMeasurement?.height ?? 0;
+    const total = native?.contentSize?.height ?? 0;
+    const paddingToBottom = 120;
+    const nearBottom = y + visible >= total - paddingToBottom;
+
+    if (isNearBottomRef.current !== nearBottom) {
+      isNearBottomRef.current = nearBottom;
+      setShowScrollToBottom(!nearBottom);
+    }
+  }
+
   useEffect(() => {
-    listRef.current?.scrollToEnd({ animated: true });
+    if (isNearBottomRef.current) scrollToBottom(true);
   }, [messages.length]);
+
+  const currentApproval = approvalQueue.length > 0 ? approvalQueue[0] : null;
+
+  const stopMode =
+    connState === 'connected' &&
+    Boolean(streamingAssistantIdRef.current) &&
+    input.trim().length === 0;
+
+  function ProjectsSidebar({ showClose }: { showClose: boolean }) {
+    function toggleProjectCollapse(cwd: string) {
+      setProjectCollapsed((prev) => ({
+        ...prev,
+        [cwd]: !prev[cwd],
+      }));
+    }
+
+    return (
+      <View style={styles.sidebarPane}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Projects</Text>
+          {showClose ? (
+            <Pressable onPress={closeThreads} style={styles.headerButton}>
+              <Text style={styles.headerButtonText}>Close</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {connState !== 'connected' ? (
+          <View style={styles.modalBody}>
+            <Text style={styles.hint}>
+              Not connected. Open Settings, connect to your Mac, then come back to browse Codex
+              threads and workspaces.
+            </Text>
+            <Pressable
+              onPress={() => {
+                if (showClose) closeThreads();
+                setSettingsOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed ? styles.primaryButtonPressed : null,
+              ]}
+            >
+              <Text style={styles.primaryButtonText}>Open Settings</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.activityBody}>
+            <View style={styles.threadsActionsRow}>
+              <View style={styles.threadsActionsLeft}>
+                <Text style={styles.activityBranchText} numberOfLines={1}>
+                  {activeCwd ? basenameFromPath(activeCwd) || 'Workspace' : 'Workspace'}
+                </Text>
+                <Text style={styles.activitySummaryMeta} numberOfLines={1}>
+                  {activeCwd ? activeCwd : '—'}
+                </Text>
+              </View>
+
+              <View style={styles.threadsActionsRight}>
+                <Pressable
+                  onPress={() => confirmStartThread()}
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    pressed ? styles.secondaryButtonPressed : null,
+                  ]}
+                >
+                  <Text style={styles.secondaryButtonText}>New chat</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => requestThreadsList()}
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    pressed ? styles.secondaryButtonPressed : null,
+                  ]}
+                >
+                  <Text style={styles.secondaryButtonText}>
+                    {threadsLoading ? '…' : 'Refresh'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.filesSearchRow}>
+              <TextInput
+                value={threadsSearch}
+                onChangeText={setThreadsSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={[styles.modalInput, styles.filesSearchInput]}
+                placeholder="Search projects or threads…"
+                placeholderTextColor="#6b7280"
+              />
+              <Pressable
+                onPress={() => setThreadsSearch('')}
+                disabled={!threadsSearch.trim()}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  !threadsSearch.trim() ? styles.sendButtonDisabled : null,
+                  pressed ? styles.secondaryButtonPressed : null,
+                ]}
+              >
+                <Text style={styles.secondaryButtonText}>Clear</Text>
+              </Pressable>
+            </View>
+
+            {threadsLoading ? (
+              <View style={styles.filesLoading}>
+                <ActivityIndicator color="#e5e7eb" />
+                <Text style={styles.filesHint}>Loading projects…</Text>
+              </View>
+            ) : projectSections.length ? (
+              <SectionList
+                sections={projectSections}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.filesList}
+                stickySectionHeadersEnabled={false}
+                renderSectionHeader={({ section }) => {
+                  const isCollapsed = Boolean(projectCollapsed[section.cwd]);
+                  const isActive = section.cwd === (activeCwd ?? '');
+                  const canStart = section.cwd !== '(unknown)';
+                  return (
+                    <View style={styles.projectHeaderWrap}>
+                      <View
+                        style={[
+                          styles.projectHeaderRow,
+                          isActive ? styles.projectHeaderRowActive : null,
+                        ]}
+                      >
+                        <Pressable
+                          onPress={() => toggleProjectCollapse(section.cwd)}
+                          style={({ pressed }) => [
+                            styles.projectHeaderLeftPressable,
+                            pressed ? styles.entryRowPressed : null,
+                          ]}
+                        >
+                          <View style={styles.projectHeaderLeft}>
+                            <Text style={styles.projectHeaderTitle} numberOfLines={1}>
+                              {section.title}
+                            </Text>
+                            <Text style={styles.projectHeaderMeta} numberOfLines={1}>
+                              {section.cwd === '(unknown)'
+                                ? 'Unknown folder'
+                                : `${section.threadCount} thread${section.threadCount === 1 ? '' : 's'}`}
+                            </Text>
+                          </View>
+                        </Pressable>
+                        <View style={styles.projectHeaderRight}>
+                          <Pressable
+                            onPress={() => doStartThread(section.cwd)}
+                            disabled={!canStart}
+                            style={({ pressed }) => [
+                              styles.projectHeaderNewButton,
+                              !canStart ? styles.sendButtonDisabled : null,
+                              pressed ? styles.secondaryButtonPressed : null,
+                            ]}
+                          >
+                            <Text style={styles.projectHeaderNewText}>＋</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => toggleProjectCollapse(section.cwd)}
+                            hitSlop={10}
+                            style={({ pressed }) => [
+                              styles.projectHeaderChevronButton,
+                              pressed ? styles.entryRowPressed : null,
+                            ]}
+                          >
+                            <Text style={styles.projectHeaderChevron}>
+                              {isCollapsed ? '›' : '⌄'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                }}
+                renderItem={({ item }) => {
+                  const isActive = item.id === activeThreadId;
+                  const title = item.name?.trim() || item.preview?.trim() || '(Untitled)';
+                  return (
+                    <Pressable
+                      onPress={() => confirmSelectThread(item)}
+                      style={({ pressed }) => [
+                        styles.threadRow,
+                        isActive ? styles.threadRowActive : null,
+                        pressed ? styles.entryRowPressed : null,
+                      ]}
+                    >
+                      <View style={styles.threadRowLeft}>
+                        <Text style={styles.threadRowTitle} numberOfLines={1}>
+                          {title}
+                        </Text>
+                        <Text style={styles.threadRowMeta} numberOfLines={1}>
+                          {item.id.slice(0, 8)}…
+                        </Text>
+                      </View>
+                      {isActive ? (
+                        <View style={styles.threadActivePill}>
+                          <Text style={styles.threadActivePillText}>Active</Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.entryChevron}>›</Text>
+                      )}
+                    </Pressable>
+                  );
+                }}
+                renderSectionFooter={({ section }) =>
+                  projectCollapsed[section.cwd] ? (
+                    <View style={styles.projectCollapsedHintWrap}>
+                      <Text style={styles.filesHint}>
+                        {section.threadCount
+                          ? `${section.threadCount} thread${section.threadCount === 1 ? '' : 's'} hidden`
+                          : 'No threads'}
+                      </Text>
+                    </View>
+                  ) : null
+                }
+              />
+            ) : (
+              <View style={styles.filesLoading}>
+                <Text style={styles.filesHint}>No projects yet. Tap Refresh to sync.</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  function FilesSidebar({ showClose }: { showClose: boolean }) {
+    return (
+      <View style={styles.sidebarPane}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>
+            {workspaceName ? `Workspace • ${workspaceName}` : 'Workspace'}
+          </Text>
+          {showClose ? (
+            <Pressable onPress={closeFiles} style={styles.headerButton}>
+              <Text style={styles.headerButtonText}>Close</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {connState !== 'connected' ? (
+          <View style={styles.modalBody}>
+            <Text style={styles.hint}>
+              Not connected. Open Settings, verify your WS URL and token, then try again.
+            </Text>
+            <Pressable
+              onPress={() => {
+                if (showClose) closeFiles();
+                setSettingsOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed ? styles.primaryButtonPressed : null,
+              ]}
+            >
+              <Text style={styles.primaryButtonText}>Open Settings</Text>
+            </Pressable>
+          </View>
+        ) : selectedFileLoading || selectedFilePath ? (
+          <View style={styles.filesBody}>
+            <View style={styles.filesTopRow}>
+              <Pressable
+                onPress={() => {
+                  setSelectedFilePath(null);
+                  setSelectedFileContent('');
+                  setSelectedFileLoading(false);
+                  setSelectedFileTruncated(false);
+                }}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Back</Text>
+              </Pressable>
+              <Text style={styles.filesPathText} numberOfLines={1}>
+                {selectedFilePath ?? ''}
+              </Text>
+            </View>
+
+            {selectedFileTruncated ? (
+              <Text style={styles.filesHint}>
+                This file was truncated by the server. Only the first bytes are shown.
+              </Text>
+            ) : null}
+
+            <View style={styles.filesContentCard}>
+              {selectedFileLoading ? (
+                <View style={styles.filesLoading}>
+                  <ActivityIndicator color="#e5e7eb" />
+                  <Text style={styles.filesHint}>Loading file…</Text>
+                </View>
+              ) : (
+                <ScrollView>
+                  <Text style={styles.fileText}>{selectedFileContent}</Text>
+                </ScrollView>
+              )}
+            </View>
+
+            <View style={styles.filesActionsRow}>
+              <Pressable
+                onPress={insertSelectedFileIntoComposer}
+                disabled={selectedFileLoading || !selectedFileContent}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  selectedFileLoading || !selectedFileContent ? styles.sendButtonDisabled : null,
+                  pressed ? styles.secondaryButtonPressed : null,
+                ]}
+              >
+                <Text style={styles.secondaryButtonText}>Insert</Text>
+              </Pressable>
+              <Pressable
+                onPress={sendSelectedFileToChat}
+                disabled={selectedFileLoading || !selectedFileContent}
+                style={({ pressed }) => [
+                  styles.primaryButtonSmall,
+                  selectedFileLoading || !selectedFileContent ? styles.sendButtonDisabled : null,
+                  pressed ? styles.primaryButtonPressed : null,
+                ]}
+              >
+                <Text style={styles.primaryButtonText}>Send</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.filesBody}>
+            <View style={styles.filesTabsRow}>
+              <Pressable
+                onPress={() => setFilesTab('browse')}
+                style={[styles.filesTab, filesTab === 'browse' ? styles.filesTabActive : null]}
+              >
+                <Text
+                  style={[
+                    styles.filesTabText,
+                    filesTab === 'browse' ? styles.filesTabTextActive : null,
+                  ]}
+                >
+                  Browse
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setFilesTab('search')}
+                style={[styles.filesTab, filesTab === 'search' ? styles.filesTabActive : null]}
+              >
+                <Text
+                  style={[
+                    styles.filesTabText,
+                    filesTab === 'search' ? styles.filesTabTextActive : null,
+                  ]}
+                >
+                  Search
+                </Text>
+              </Pressable>
+            </View>
+
+            {filesTab === 'browse' ? (
+              <>
+                <View style={styles.filesTopRow}>
+                  <Pressable
+                    onPress={() => requestListDir(parentDirPath(browsePath))}
+                    disabled={!browsePath}
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      !browsePath ? styles.sendButtonDisabled : null,
+                      pressed ? styles.secondaryButtonPressed : null,
+                    ]}
+                  >
+                    <Text style={styles.secondaryButtonText}>Up</Text>
+                  </Pressable>
+                  <Text style={styles.filesPathText} numberOfLines={1}>
+                    {browsePath || '.'}
+                  </Text>
+                  <Pressable
+                    onPress={() => requestListDir(browsePath)}
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      pressed ? styles.secondaryButtonPressed : null,
+                    ]}
+                  >
+                    <Text style={styles.secondaryButtonText}>
+                      {browseLoading ? '…' : 'Refresh'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {browseLoading ? (
+                  <View style={styles.filesLoading}>
+                    <ActivityIndicator color="#e5e7eb" />
+                    <Text style={styles.filesHint}>Loading…</Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={browseEntries}
+                    keyExtractor={(e) => e.path || `${e.type}:${e.name}`}
+                    contentContainerStyle={styles.filesList}
+                    renderItem={({ item }) => (
+                      <Pressable
+                        onPress={() => {
+                          if (item.type === 'dir') requestListDir(item.path);
+                          else requestReadFile(item.path);
+                        }}
+                        style={({ pressed }) => [
+                          styles.entryRow,
+                          pressed ? styles.entryRowPressed : null,
+                        ]}
+                      >
+                        <View style={styles.entryLeft}>
+                          <Text style={styles.entryName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                          <Text style={styles.entryMeta} numberOfLines={1}>
+                            {item.type === 'dir'
+                              ? 'dir'
+                              : item.size
+                                ? `${item.size} bytes`
+                                : 'file'}
+                          </Text>
+                        </View>
+                        <Text style={styles.entryChevron}>{item.type === 'dir' ? '›' : '↗'}</Text>
+                      </Pressable>
+                    )}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <Text style={styles.label}>Search</Text>
+                <View style={styles.filesSearchRow}>
+                  <TextInput
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={[styles.modalInput, styles.filesSearchInput]}
+                    placeholder="Search in workspace…"
+                    placeholderTextColor="#6b7280"
+                  />
+                  <Pressable
+                    onPress={() => requestSearch(searchQuery, browsePath)}
+                    disabled={!searchQuery.trim()}
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      !searchQuery.trim() ? styles.sendButtonDisabled : null,
+                      pressed ? styles.secondaryButtonPressed : null,
+                    ]}
+                  >
+                    <Text style={styles.secondaryButtonText}>{searchLoading ? '…' : 'Go'}</Text>
+                  </Pressable>
+                </View>
+
+                {searchTruncated ? (
+                  <Text style={styles.filesHint}>
+                    Results truncated (limit reached). Refine your query.
+                  </Text>
+                ) : null}
+
+                {searchLoading ? (
+                  <View style={styles.filesLoading}>
+                    <ActivityIndicator color="#e5e7eb" />
+                    <Text style={styles.filesHint}>Searching…</Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={searchMatches}
+                    keyExtractor={(m) => `${m.path}:${m.line}:${m.column}`}
+                    contentContainerStyle={styles.filesList}
+                    renderItem={({ item }) => (
+                      <Pressable
+                        onPress={() => requestReadFile(item.path)}
+                        style={({ pressed }) => [
+                          styles.entryRow,
+                          pressed ? styles.entryRowPressed : null,
+                        ]}
+                      >
+                        <View style={styles.entryLeft}>
+                          <Text style={styles.entryName} numberOfLines={1}>
+                            {item.path}:{item.line}:{item.column}
+                          </Text>
+                          <Text style={styles.entryMeta} numberOfLines={2}>
+                            {item.text}
+                          </Text>
+                        </View>
+                        <Text style={styles.entryChevron}>↗</Text>
+                      </Pressable>
+                    )}
+                  />
+                )}
+              </>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
 
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View
-            style={[
-              styles.statusDot,
-              connState === 'connected'
-                ? styles.dotOk
-                : connState === 'connecting'
-                  ? styles.dotWarn
-                  : styles.dotOff,
-            ]}
-          />
-          <View>
-            <Text style={styles.title}>Codex</Text>
-            <Text style={styles.subtitle} numberOfLines={1}>
-              {connState}
-              {serverModel ? ` • ${serverModel}` : ''}
-              {activeBaseUrl || wsUrl ? ` • ${hostLabel((activeBaseUrl || wsUrl).trim())}` : ''}
-            </Text>
+      <View style={styles.shell}>
+        {showSidebars ? (
+          <View style={styles.sidebarLeft}>
+            <ProjectsSidebar showClose={false} />
           </View>
-        </View>
+        ) : null}
 
-        <View style={styles.headerRight}>
-          <Pressable onPress={openFiles} style={styles.headerButton}>
-            <Text style={styles.headerButtonText}>Files</Text>
-          </Pressable>
-          <Pressable onPress={resetChat} style={styles.headerButton}>
-            <Text style={styles.headerButtonText}>Reset</Text>
-          </Pressable>
-          <Pressable onPress={() => setSettingsOpen(true)} style={styles.headerButton}>
-            <Text style={styles.headerButtonText}>Settings</Text>
-          </Pressable>
-        </View>
-      </View>
+        <View style={styles.mainPane}>
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              {!showSidebars ? (
+                <Pressable onPress={openThreads} style={styles.headerIconButton} hitSlop={8}>
+                  <Text style={styles.headerIconText}>≡</Text>
+                </Pressable>
+              ) : null}
+              <View
+                style={[
+                  styles.statusDot,
+                  connState === 'connected'
+                    ? styles.dotOk
+                    : connState === 'connecting'
+                      ? styles.dotWarn
+                      : styles.dotOff,
+                ]}
+              />
+              <View>
+                <Text style={styles.title}>Codex</Text>
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {connState}
+                  {serverModel ? ` • ${serverModel}` : ''}
+                  {activeCwd ? ` • ${basenameFromPath(activeCwd)}` : ''}
+                  {activeBaseUrl || wsUrl
+                    ? ` • ${hostLabel((activeBaseUrl || wsUrl).trim())}`
+                    : ''}
+                </Text>
+              </View>
+            </View>
 
-      {errorBanner ? (
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>{errorBanner}</Text>
-        </View>
-      ) : null}
-      {updateBanner ? (
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>{updateBanner}</Text>
-        </View>
-      ) : null}
-
-      <FlatList
-        ref={listRef}
-        contentContainerStyle={styles.listContent}
-        data={messages}
-        keyExtractor={(m) => m.id}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-        onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
-        renderItem={({ item }) => (
-          <View
-            style={[
-              styles.bubbleRow,
-              item.role === 'user' ? styles.rowUser : styles.rowAssistant,
-            ]}
-          >
-            <View
-              style={[
-                styles.bubble,
-                item.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
-              ]}
-            >
-              <Text style={styles.bubbleText}>{item.text}</Text>
+            <View style={styles.headerRight}>
+              {!showSidebars ? (
+                <Pressable onPress={() => openFiles()} style={styles.headerButton} hitSlop={6}>
+                  <Text style={styles.headerButtonText}>Files</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={openHeaderMenu} style={styles.headerButton} hitSlop={6}>
+                <Text style={styles.headerMenuText}>⋯</Text>
+              </Pressable>
             </View>
           </View>
-        )}
-      />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
-      >
-        <View style={styles.composer}>
-          <TextInput
-            value={input}
-            onChangeText={setInput}
-            style={styles.input}
-            placeholder="Message Codex…"
-            placeholderTextColor="#6b7280"
-            multiline
-          />
-          <Pressable
-            onPress={sendUserMessage}
-            disabled={connState !== 'connected' || input.trim().length === 0}
-            style={({ pressed }) => [
-              styles.sendButton,
-              connState !== 'connected' || input.trim().length === 0
-                ? styles.sendButtonDisabled
-                : pressed
-                  ? styles.sendButtonPressed
-                  : null,
-            ]}
-          >
-            {connState === 'connecting' ? (
-              <ActivityIndicator color="#0b0f19" />
-            ) : (
-              <Text style={styles.sendButtonText}>Send</Text>
+          {errorBanner ? (
+            <View style={styles.banner}>
+              <Text style={styles.bannerText}>{errorBanner}</Text>
+            </View>
+          ) : null}
+          {updateBanner ? (
+            <View style={styles.banner}>
+              <Text style={styles.bannerText}>{updateBanner}</Text>
+            </View>
+          ) : null}
+
+          <FlatList
+            ref={listRef}
+            contentContainerStyle={styles.listContent}
+            data={messages}
+            keyExtractor={(m) => m.id}
+            keyboardShouldPersistTaps="handled"
+            onScroll={handleChatScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={() => {
+              if (isNearBottomRef.current) scrollToBottom(false);
+            }}
+            onLayout={() => {
+              if (isNearBottomRef.current) scrollToBottom(false);
+            }}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>Ready</Text>
+                <Text style={styles.emptySubtitle}>
+                  {connState === 'connected'
+                    ? 'Send a message to start.'
+                    : 'Open Settings to connect to your Mac.'}
+                </Text>
+                {connState !== 'connected' ? (
+                  <Pressable
+                    onPress={() => setSettingsOpen(true)}
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      pressed ? styles.primaryButtonPressed : null,
+                    ]}
+                  >
+                    <Text style={styles.primaryButtonText}>Open Settings</Text>
+                  </Pressable>
+                ) : showSidebars ? (
+                  <Text style={styles.emptyHint}>Tip: pick a project on the left.</Text>
+                ) : (
+                  <Text style={styles.emptyHint}>Tip: open Projects to switch threads.</Text>
+                )}
+              </View>
+            }
+            renderItem={({ item }) => (
+              <View
+                style={[
+                  styles.bubbleRow,
+                  item.role === 'user' ? styles.rowUser : styles.rowAssistant,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.bubble,
+                    item.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
+                  ]}
+                >
+                  {parseMessageBlocks(item.text).map((block, idx) =>
+                    block.type === 'code' ? (
+                      <View
+                        key={`${item.id}:code:${idx}`}
+                        style={[
+                          styles.codeBlock,
+                          item.role === 'user' ? styles.codeBlockUser : null,
+                          idx > 0 ? styles.messageBlockSpacing : null,
+                        ]}
+                      >
+                        {block.lang ? (
+                          <Text
+                            style={[
+                              styles.codeLang,
+                              item.role === 'user' ? styles.codeLangUser : null,
+                            ]}
+                            selectable
+                          >
+                            {block.lang}
+                          </Text>
+                        ) : null}
+                        <Text
+                          style={[
+                            styles.codeText,
+                            item.role === 'user' ? styles.codeTextUser : null,
+                          ]}
+                          selectable
+                        >
+                          {block.code}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text
+                        key={`${item.id}:text:${idx}`}
+                        style={[styles.bubbleText, idx > 0 ? styles.messageBlockSpacing : null]}
+                        selectable
+                      >
+                        {block.text}
+                      </Text>
+                    ),
+                  )}
+
+                  <View style={styles.messageMetaRow}>
+                    <Text
+                      style={[
+                        styles.messageMetaText,
+                        item.role === 'user' ? styles.messageMetaTextUser : null,
+                      ]}
+                    >
+                      {formatMessageTime(item.createdAt)}
+                    </Text>
+                    <View style={styles.messageMetaRight}>
+                      {streamingAssistantIdRef.current === item.id ? (
+                        <ActivityIndicator size="small" color="#9ca3af" />
+                      ) : null}
+                      <Pressable
+                        onPress={() => showMessageActions(item)}
+                        hitSlop={12}
+                        style={({ pressed }) => [
+                          styles.messageMetaButton,
+                          item.role === 'user' ? styles.messageMetaButtonUser : null,
+                          pressed ? styles.messageMetaButtonPressed : null,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.messageMetaButtonText,
+                            item.role === 'user' ? styles.messageMetaButtonTextUser : null,
+                          ]}
+                        >
+                          ⋯
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              </View>
             )}
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
+          />
 
-      <Modal visible={filesOpen} animationType="slide" presentationStyle="pageSheet">
+          {showScrollToBottom ? (
+            <View style={styles.scrollToBottomWrap}>
+              <Pressable
+                onPress={() => scrollToBottom(true)}
+                style={({ pressed }) => [
+                  styles.scrollToBottomButton,
+                  pressed ? styles.scrollToBottomButtonPressed : null,
+                ]}
+              >
+                <Text style={styles.scrollToBottomText}>↓</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+          >
+            <View style={styles.composer}>
+              <TextInput
+                value={input}
+                onChangeText={setInput}
+                style={styles.input}
+                placeholder="Message Codex…"
+                placeholderTextColor="#6b7280"
+                multiline
+              />
+              <Pressable
+                onPress={stopMode ? abortAssistant : sendUserMessage}
+                disabled={connState !== 'connected' || (!stopMode && input.trim().length === 0)}
+                style={({ pressed }) => [
+                  stopMode ? styles.stopButton : styles.sendButton,
+                  connState !== 'connected' || (!stopMode && input.trim().length === 0)
+                    ? styles.sendButtonDisabled
+                    : pressed
+                      ? stopMode
+                        ? styles.stopButtonPressed
+                        : styles.sendButtonPressed
+                      : null,
+                ]}
+              >
+                {connState === 'connecting' ? (
+                  <ActivityIndicator color="#0b0f19" />
+                ) : stopMode ? (
+                  <Text style={styles.stopButtonText}>Stop</Text>
+                ) : (
+                  <Text style={styles.sendButtonText}>Send</Text>
+                )}
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+
+        {showSidebars ? (
+          <View style={styles.sidebarRight}>
+            <FilesSidebar showClose={false} />
+          </View>
+        ) : null}
+      </View>
+
+      <Modal
+        visible={Boolean(currentApproval)}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => {
+          if (currentApproval) sendApprovalDecision(currentApproval.requestId, 'cancel');
+        }}
+      >
+        <SafeAreaView style={styles.modalSafe}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle} numberOfLines={1}>
+              {currentApproval
+                ? `${currentApproval.title} • ${currentApproval.kind} (${approvalQueue.length})`
+                : 'Approval'}
+            </Text>
+            <Pressable
+              onPress={() => {
+                if (currentApproval) sendApprovalDecision(currentApproval.requestId, 'cancel');
+              }}
+              style={styles.headerButton}
+            >
+              <Text style={styles.headerButtonText}>Cancel</Text>
+            </Pressable>
+          </View>
+
+          {currentApproval ? (
+            <View style={styles.modalBody}>
+              <Text style={styles.hint}>
+                Codex is waiting for your approval before continuing this turn.
+              </Text>
+
+              <View style={styles.approvalCard}>
+                <ScrollView>
+                  <Text style={styles.approvalDetail} selectable>
+                    {currentApproval.detail}
+                  </Text>
+                </ScrollView>
+              </View>
+
+              <View style={styles.approvalButtonsRow}>
+                <Pressable
+                  onPress={() => sendApprovalDecision(currentApproval.requestId, 'accept')}
+                  style={({ pressed }) => [
+                    styles.approvalApproveButton,
+                    pressed ? styles.approvalButtonPressed : null,
+                  ]}
+                >
+                  <Text style={styles.approvalApproveText}>Approve</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => sendApprovalDecision(currentApproval.requestId, 'acceptForSession')}
+                  style={({ pressed }) => [
+                    styles.approvalSessionButton,
+                    pressed ? styles.approvalButtonPressed : null,
+                  ]}
+                >
+                  <Text style={styles.approvalSessionText}>Allow (Session)</Text>
+                </Pressable>
+              </View>
+
+              <Pressable
+                onPress={() => sendApprovalDecision(currentApproval.requestId, 'decline')}
+                style={({ pressed }) => [
+                  styles.approvalDenyButton,
+                  pressed ? styles.approvalButtonPressed : null,
+                ]}
+              >
+                <Text style={styles.approvalDenyText}>Deny</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </SafeAreaView>
+      </Modal>
+
+      {!showSidebars ? (
+        <Modal visible={threadsOpen} animationType="slide" presentationStyle="pageSheet">
+          <SafeAreaView style={styles.modalSafe}>
+            <ProjectsSidebar showClose={true} />
+          </SafeAreaView>
+        </Modal>
+      ) : null}
+
+      <Modal visible={activityOpen} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={styles.modalSafe}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
-              {workspaceName ? `Workspace • ${workspaceName}` : 'Workspace'}
+              {gitBranch ? `Activity • ${gitBranch}` : 'Activity'}
             </Text>
-            <Pressable onPress={closeFiles} style={styles.headerButton}>
+            <Pressable onPress={closeActivity} style={styles.headerButton}>
               <Text style={styles.headerButtonText}>Close</Text>
             </Pressable>
           </View>
@@ -932,11 +2332,12 @@ export default function App() {
           {connState !== 'connected' ? (
             <View style={styles.modalBody}>
               <Text style={styles.hint}>
-                Not connected. Open Settings, verify your WS URL and token, then try again.
+                Not connected. Open Settings to connect, then come back here to view git status and
+                diffs.
               </Text>
               <Pressable
                 onPress={() => {
-                  closeFiles();
+                  closeActivity();
                   setSettingsOpen(true);
                 }}
                 style={({ pressed }) => [
@@ -947,62 +2348,65 @@ export default function App() {
                 <Text style={styles.primaryButtonText}>Open Settings</Text>
               </Pressable>
             </View>
-          ) : selectedFileLoading || selectedFilePath ? (
-            <View style={styles.filesBody}>
-              <View style={styles.filesTopRow}>
-                <Pressable
-                  onPress={() => {
-                    setSelectedFilePath(null);
-                    setSelectedFileContent('');
-                    setSelectedFileLoading(false);
-                    setSelectedFileTruncated(false);
-                  }}
-                  style={styles.secondaryButton}
-                >
+          ) : gitDiffPath ? (
+            <View style={styles.activityBody}>
+              <View style={styles.activityTopRow}>
+                <Pressable onPress={closeGitDiff} style={styles.secondaryButton}>
                   <Text style={styles.secondaryButtonText}>Back</Text>
                 </Pressable>
-                <Text style={styles.filesPathText} numberOfLines={1}>
-                  {selectedFilePath ?? ''}
+                <Text style={styles.activityPathText} numberOfLines={1}>
+                  {gitDiffPath}
                 </Text>
+                <Pressable
+                  onPress={() => requestGitDiff(gitDiffPath)}
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    pressed ? styles.secondaryButtonPressed : null,
+                  ]}
+                >
+                  <Text style={styles.secondaryButtonText}>Refresh</Text>
+                </Pressable>
               </View>
 
-              {selectedFileTruncated ? (
-                <Text style={styles.filesHint}>
-                  This file was truncated by the server. Only the first bytes are shown.
+              {gitDiffTruncated ? (
+                <Text style={styles.activityHint}>
+                  This diff was truncated by the server. Only the first bytes are shown.
                 </Text>
               ) : null}
 
-              <View style={styles.filesContentCard}>
-                {selectedFileLoading ? (
+              <View style={styles.activityContentCard}>
+                {gitDiffLoading ? (
                   <View style={styles.filesLoading}>
                     <ActivityIndicator color="#e5e7eb" />
-                    <Text style={styles.filesHint}>Loading file…</Text>
+                    <Text style={styles.activityHint}>Loading diff…</Text>
                   </View>
                 ) : (
                   <ScrollView>
-                    <Text style={styles.fileText}>{selectedFileContent}</Text>
+                    <Text style={styles.activityCodeText}>
+                      {gitDiffText.trim() ? gitDiffText : '(No diff)'}
+                    </Text>
                   </ScrollView>
                 )}
               </View>
 
               <View style={styles.filesActionsRow}>
                 <Pressable
-                  onPress={insertSelectedFileIntoComposer}
-                  disabled={selectedFileLoading || !selectedFileContent}
+                  onPress={insertGitDiffIntoComposer}
+                  disabled={gitDiffLoading}
                   style={({ pressed }) => [
                     styles.secondaryButton,
-                    selectedFileLoading || !selectedFileContent ? styles.sendButtonDisabled : null,
+                    gitDiffLoading ? styles.sendButtonDisabled : null,
                     pressed ? styles.secondaryButtonPressed : null,
                   ]}
                 >
                   <Text style={styles.secondaryButtonText}>Insert</Text>
                 </Pressable>
                 <Pressable
-                  onPress={sendSelectedFileToChat}
-                  disabled={selectedFileLoading || !selectedFileContent}
+                  onPress={sendGitDiffToChat}
+                  disabled={gitDiffLoading}
                   style={({ pressed }) => [
                     styles.primaryButtonSmall,
-                    selectedFileLoading || !selectedFileContent ? styles.sendButtonDisabled : null,
+                    gitDiffLoading ? styles.sendButtonDisabled : null,
                     pressed ? styles.primaryButtonPressed : null,
                   ]}
                 >
@@ -1011,180 +2415,143 @@ export default function App() {
               </View>
             </View>
           ) : (
-            <View style={styles.filesBody}>
-              <View style={styles.filesTabsRow}>
-                <Pressable
-                  onPress={() => setFilesTab('browse')}
-                  style={[
-                    styles.filesTab,
-                    filesTab === 'browse' ? styles.filesTabActive : null,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.filesTabText,
-                      filesTab === 'browse' ? styles.filesTabTextActive : null,
-                    ]}
-                  >
-                    Browse
+            <View style={styles.activityBody}>
+              <View style={styles.activitySummaryRow}>
+                <View style={styles.activitySummaryLeft}>
+                  <Text style={styles.activityBranchText} numberOfLines={1}>
+                    {gitBranch ?? '—'}
                   </Text>
-                </Pressable>
+                  <Text style={styles.activitySummaryMeta}>
+                    {gitEntries.length ? `${gitEntries.length} changes` : 'Working tree clean'}
+                    {gitHiddenCount ? ` • ${gitHiddenCount} hidden` : ''}
+                  </Text>
+                </View>
                 <Pressable
-                  onPress={() => setFilesTab('search')}
-                  style={[
-                    styles.filesTab,
-                    filesTab === 'search' ? styles.filesTabActive : null,
+                  onPress={() => {
+                    requestGitStatus();
+                    requestGitLog(25);
+                  }}
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    pressed ? styles.secondaryButtonPressed : null,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.filesTabText,
-                      filesTab === 'search' ? styles.filesTabTextActive : null,
-                    ]}
-                  >
-                    Search
+                  <Text style={styles.secondaryButtonText}>
+                    {gitStatusLoading || gitLogLoading ? '…' : 'Refresh'}
                   </Text>
                 </Pressable>
               </View>
 
-              {filesTab === 'browse' ? (
-                <>
-                  <View style={styles.filesTopRow}>
-                    <Pressable
-                      onPress={() => requestListDir(parentDirPath(browsePath))}
-                      disabled={!browsePath}
-                      style={({ pressed }) => [
-                        styles.secondaryButton,
-                        !browsePath ? styles.sendButtonDisabled : null,
-                        pressed ? styles.secondaryButtonPressed : null,
-                      ]}
-                    >
-                      <Text style={styles.secondaryButtonText}>Up</Text>
-                    </Pressable>
-                    <Text style={styles.filesPathText} numberOfLines={1}>
-                      {browsePath ? `/${browsePath}` : '/'}
-                    </Text>
-                    <Pressable
-                      onPress={() => requestListDir(browsePath)}
-                      style={({ pressed }) => [
-                        styles.secondaryButton,
-                        pressed ? styles.secondaryButtonPressed : null,
-                      ]}
-                    >
-                      <Text style={styles.secondaryButtonText}>Refresh</Text>
-                    </Pressable>
-                  </View>
+              <View style={styles.filesTabsRow}>
+                <Pressable
+                  onPress={() => setActivityTab('status')}
+                  style={[
+                    styles.filesTab,
+                    activityTab === 'status' ? styles.filesTabActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.filesTabText,
+                      activityTab === 'status' ? styles.filesTabTextActive : null,
+                    ]}
+                  >
+                    Status
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setActivityTab('log')}
+                  style={[
+                    styles.filesTab,
+                    activityTab === 'log' ? styles.filesTabActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.filesTabText,
+                      activityTab === 'log' ? styles.filesTabTextActive : null,
+                    ]}
+                  >
+                    Log
+                  </Text>
+                </Pressable>
+              </View>
 
-                  {browseLoading ? (
-                    <View style={styles.filesLoading}>
-                      <ActivityIndicator color="#e5e7eb" />
-                      <Text style={styles.filesHint}>Loading…</Text>
-                    </View>
-                  ) : (
-                    <FlatList
-                      data={browseEntries}
-                      keyExtractor={(e) => e.path || `${e.type}:${e.name}`}
-                      contentContainerStyle={styles.filesList}
-                      renderItem={({ item }) => (
-                        <Pressable
-                          onPress={() => {
-                            if (item.type === 'dir') requestListDir(item.path);
-                            else requestReadFile(item.path);
-                          }}
-                          style={({ pressed }) => [
-                            styles.entryRow,
-                            pressed ? styles.entryRowPressed : null,
-                          ]}
-                        >
-                          <View style={styles.entryLeft}>
-                            <Text style={styles.entryName} numberOfLines={1}>
-                              {item.name}
-                            </Text>
-                            <Text style={styles.entryMeta} numberOfLines={1}>
-                              {item.type === 'dir'
-                                ? 'dir'
-                                : item.size
-                                  ? `${item.size} bytes`
-                                  : 'file'}
-                            </Text>
+              {activityTab === 'status' ? (
+                gitStatusLoading ? (
+                  <View style={styles.filesLoading}>
+                    <ActivityIndicator color="#e5e7eb" />
+                    <Text style={styles.activityHint}>Loading status…</Text>
+                  </View>
+                ) : gitEntries.length ? (
+                  <FlatList
+                    data={gitEntries}
+                    keyExtractor={(e) => `${e.code}:${e.path}:${e.fromPath ?? ''}`}
+                    contentContainerStyle={styles.filesList}
+                    renderItem={({ item }) => (
+                      <Pressable
+                        onPress={() => requestGitDiff(item.path)}
+                        style={({ pressed }) => [
+                          styles.gitEntryRow,
+                          pressed ? styles.entryRowPressed : null,
+                        ]}
+                      >
+                        <View style={styles.gitEntryLeft}>
+                          <View style={styles.gitCodePill}>
+                            <Text style={styles.gitCodeText}>{item.code}</Text>
                           </View>
-                          <Text style={styles.entryChevron}>{item.type === 'dir' ? '›' : '↗'}</Text>
-                        </Pressable>
-                      )}
-                    />
-                  )}
-                </>
+                          <View style={styles.gitPathWrap}>
+                            <Text style={styles.gitPathText} numberOfLines={1}>
+                              {item.path}
+                            </Text>
+                            {item.fromPath ? (
+                              <Text style={styles.gitFromText} numberOfLines={1}>
+                                {item.fromPath} → {item.path}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </View>
+                        <Text style={styles.entryChevron}>›</Text>
+                      </Pressable>
+                    )}
+                  />
+                ) : (
+                  <View style={styles.modalBody}>
+                    <Text style={styles.hint}>No changes.</Text>
+                  </View>
+                )
+              ) : gitLogLoading ? (
+                <View style={styles.filesLoading}>
+                  <ActivityIndicator color="#e5e7eb" />
+                  <Text style={styles.activityHint}>Loading log…</Text>
+                </View>
               ) : (
-                <>
-                  <Text style={styles.label}>Search</Text>
-                  <View style={styles.filesSearchRow}>
-                    <TextInput
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      style={[styles.modalInput, styles.filesSearchInput]}
-                      placeholder="Search in workspace…"
-                      placeholderTextColor="#6b7280"
-                    />
-                    <Pressable
-                      onPress={() => requestSearch(searchQuery, browsePath)}
-                      disabled={!searchQuery.trim()}
-                      style={({ pressed }) => [
-                        styles.secondaryButton,
-                        !searchQuery.trim() ? styles.sendButtonDisabled : null,
-                        pressed ? styles.secondaryButtonPressed : null,
-                      ]}
-                    >
-                      <Text style={styles.secondaryButtonText}>
-                        {searchLoading ? '…' : 'Go'}
+                <FlatList
+                  data={gitCommits}
+                  keyExtractor={(c) => c.hash}
+                  contentContainerStyle={styles.filesList}
+                  renderItem={({ item }) => (
+                    <View style={styles.commitRow}>
+                      <Text style={styles.commitHash}>{item.hash}</Text>
+                      <Text style={styles.commitSubject} numberOfLines={2}>
+                        {item.subject}
                       </Text>
-                    </Pressable>
-                  </View>
-
-                  {searchTruncated ? (
-                    <Text style={styles.filesHint}>
-                      Results truncated (limit reached). Refine your query.
-                    </Text>
-                  ) : null}
-
-                  {searchLoading ? (
-                    <View style={styles.filesLoading}>
-                      <ActivityIndicator color="#e5e7eb" />
-                      <Text style={styles.filesHint}>Searching…</Text>
                     </View>
-                  ) : (
-                    <FlatList
-                      data={searchMatches}
-                      keyExtractor={(m) => `${m.path}:${m.line}:${m.column}`}
-                      contentContainerStyle={styles.filesList}
-                      renderItem={({ item }) => (
-                        <Pressable
-                          onPress={() => requestReadFile(item.path)}
-                          style={({ pressed }) => [
-                            styles.entryRow,
-                            pressed ? styles.entryRowPressed : null,
-                          ]}
-                        >
-                          <View style={styles.entryLeft}>
-                            <Text style={styles.entryName} numberOfLines={1}>
-                              {item.path}:{item.line}:{item.column}
-                            </Text>
-                            <Text style={styles.entryMeta} numberOfLines={2}>
-                              {item.text}
-                            </Text>
-                          </View>
-                          <Text style={styles.entryChevron}>↗</Text>
-                        </Pressable>
-                      )}
-                    />
                   )}
-                </>
+                />
               )}
             </View>
           )}
         </SafeAreaView>
       </Modal>
+
+      {!showSidebars ? (
+        <Modal visible={filesOpen} animationType="slide" presentationStyle="pageSheet">
+          <SafeAreaView style={styles.modalSafe}>
+            <FilesSidebar showClose={true} />
+          </SafeAreaView>
+        </Modal>
+      ) : null}
 
       <Modal visible={settingsOpen} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={styles.modalSafe}>
@@ -1203,11 +2570,11 @@ export default function App() {
               autoCapitalize="none"
               autoCorrect={false}
               style={styles.modalInput}
-              placeholder="ws://100.x.y.z:8787"
+              placeholder="wss://ios.phi.pe"
               placeholderTextColor="#6b7280"
             />
 
-            <Text style={styles.label}>Token (optional)</Text>
+            <Text style={styles.label}>Token</Text>
             <TextInput
               value={token}
               onChangeText={setToken}
@@ -1218,9 +2585,33 @@ export default function App() {
               placeholderTextColor="#6b7280"
             />
 
+            <Text style={styles.label}>Client ID</Text>
+            <View style={styles.filesSearchRow}>
+              <TextInput
+                value={clientId}
+                onChangeText={(next) => setClientId(normalizeClientIdInput(next))}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={[styles.modalInput, styles.filesSearchInput]}
+                placeholder="client_…"
+                placeholderTextColor="#6b7280"
+              />
+              <Pressable
+                onPress={() => setClientId(makeId('client'))}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  pressed ? styles.secondaryButtonPressed : null,
+                ]}
+              >
+                <Text style={styles.secondaryButtonText}>New</Text>
+              </Pressable>
+            </View>
+
             <Text style={styles.hint}>
-              Tip: use your Mac’s Tailscale IP (100.x.y.z). If your server set
-              CODEX_REMOTE_TOKEN, the token must match.
+              Tip: use the Cloudflare URL (wss://ios.phi.pe) from anywhere, or your Mac’s Tailscale
+              IP (ws://100.x.y.z:8787) when you’re on your tailnet. If your server set
+              CODEX_REMOTE_TOKEN, the token must match. Use the same Client ID on every device to
+              sync the “last active” Codex thread + history.
             </Text>
 
             <View style={styles.diagRow}>
@@ -1231,7 +2622,7 @@ export default function App() {
                   pressed ? styles.secondaryButtonPressed : null,
                 ]}
               >
-                <Text style={styles.secondaryButtonText}>Use Recommended URL</Text>
+                <Text style={styles.secondaryButtonText}>Use Recommended Defaults</Text>
               </Pressable>
               <Text style={styles.diagText} numberOfLines={1}>
                 {defaultWsUrl() ? hostLabel(defaultWsUrl().trim()) : ''}
@@ -1240,7 +2631,7 @@ export default function App() {
 
             <Text style={styles.label}>Diagnostics</Text>
             <View style={styles.diagRow}>
-              <Text style={styles.diagText} numberOfLines={1}>
+              <Text style={styles.diagText} selectable>
                 {clientId ? `Client: ${clientId}` : 'Client: (none)'}
               </Text>
               <Text style={styles.diagText}>{token.trim() ? 'Token: set' : 'Token: not set'}</Text>
@@ -1248,7 +2639,7 @@ export default function App() {
 
             {effectiveUrlPreview ? (
               <View style={styles.diagRow}>
-                <Text style={styles.diagText} numberOfLines={1}>
+                <Text style={styles.diagText} selectable>
                   {`Effective: ${effectiveUrlPreview}`}
                 </Text>
               </View>
@@ -1339,12 +2730,114 @@ export default function App() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      <Modal visible={menuOpen} transparent animationType="fade">
+        <View style={styles.menuOverlay}>
+          <Pressable onPress={() => setMenuOpen(false)} style={styles.menuBackdrop} />
+          <View style={styles.menuSheet}>
+            <Pressable
+              onPress={() => {
+                setMenuOpen(false);
+                confirmStartThread();
+              }}
+              style={({ pressed }) => [styles.menuItem, pressed ? styles.menuItemPressed : null]}
+            >
+              <Text style={styles.menuItemText}>New chat</Text>
+            </Pressable>
+            {!showSidebars ? (
+              <Pressable
+                onPress={() => {
+                  setMenuOpen(false);
+                  openThreads();
+                }}
+                style={({ pressed }) => [styles.menuItem, pressed ? styles.menuItemPressed : null]}
+              >
+                <Text style={styles.menuItemText}>Projects</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => {
+                setMenuOpen(false);
+                openActivity();
+              }}
+              style={({ pressed }) => [styles.menuItem, pressed ? styles.menuItemPressed : null]}
+            >
+              <Text style={styles.menuItemText}>Activity</Text>
+            </Pressable>
+            {!showSidebars ? (
+              <Pressable
+                onPress={() => {
+                  setMenuOpen(false);
+                  openFiles();
+                }}
+                style={({ pressed }) => [styles.menuItem, pressed ? styles.menuItemPressed : null]}
+              >
+                <Text style={styles.menuItemText}>Files</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => {
+                setMenuOpen(false);
+                setSettingsOpen(true);
+              }}
+              style={({ pressed }) => [styles.menuItem, pressed ? styles.menuItemPressed : null]}
+            >
+              <Text style={styles.menuItemText}>Settings</Text>
+            </Pressable>
+
+            <View style={styles.menuDivider} />
+
+            <Pressable
+              onPress={() => {
+                setMenuOpen(false);
+                confirmResetChat();
+              }}
+              style={({ pressed }) => [
+                styles.menuItem,
+                pressed ? styles.menuItemPressed : null,
+              ]}
+            >
+              <Text style={[styles.menuItemText, styles.menuItemTextDestructive]}>Reset Chat</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setMenuOpen(false)}
+              style={({ pressed }) => [styles.menuItem, pressed ? styles.menuItemPressed : null]}
+            >
+              <Text style={styles.menuItemText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: {
+    flex: 1,
+    backgroundColor: '#0b0f19',
+  },
+  shell: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  mainPane: {
+    flex: 1,
+    minWidth: 0,
+  },
+  sidebarLeft: {
+    width: 320,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: '#1f2937',
+    backgroundColor: '#0b0f19',
+  },
+  sidebarRight: {
+    width: 360,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: '#1f2937',
+    backgroundColor: '#0b0f19',
+  },
+  sidebarPane: {
     flex: 1,
     backgroundColor: '#0b0f19',
   },
@@ -1375,10 +2868,32 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: '#0f1524',
   },
+  headerIconButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    borderRadius: 10,
+    backgroundColor: '#0f1524',
+  },
+  headerIconText: {
+    color: '#e5e7eb',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 18,
+    marginTop: -1,
+  },
   headerButtonText: {
     color: '#e5e7eb',
     fontSize: 13,
     fontWeight: '600',
+  },
+  headerMenuText: {
+    color: '#e5e7eb',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 18,
+    marginTop: -2,
   },
   statusDot: {
     width: 10,
@@ -1415,6 +2930,31 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 10,
   },
+  emptyState: {
+    flex: 1,
+    paddingTop: 56,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    gap: 10,
+  },
+  emptyTitle: {
+    color: '#f9fafb',
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+  },
+  emptySubtitle: {
+    color: '#9ca3af',
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  emptyHint: {
+    color: '#6b7280',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 10,
+  },
   bubbleRow: {
     flexDirection: 'row',
     width: '100%',
@@ -1440,6 +2980,121 @@ const styles = StyleSheet.create({
     color: '#f9fafb',
     fontSize: 15,
     lineHeight: 20,
+  },
+  messageBlockSpacing: {
+    marginTop: 8,
+  },
+  codeBlock: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0b0f19',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  codeBlockUser: {
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(0,0,0,0.22)',
+  },
+  codeLang: {
+    color: '#9ca3af',
+    fontSize: 11,
+    fontWeight: '900',
+    marginBottom: 6,
+    fontFamily: Platform.select({
+      ios: 'Menlo',
+      android: 'monospace',
+      default: 'monospace',
+    }),
+  },
+  codeLangUser: {
+    color: 'rgba(255,255,255,0.85)',
+  },
+  codeText: {
+    color: '#e5e7eb',
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: Platform.select({
+      ios: 'Menlo',
+      android: 'monospace',
+      default: 'monospace',
+    }),
+  },
+  codeTextUser: {
+    color: '#f8fafc',
+  },
+  messageMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    gap: 10,
+  },
+  messageMetaText: {
+    color: '#6b7280',
+    fontSize: 11,
+  },
+  messageMetaTextUser: {
+    color: 'rgba(255,255,255,0.78)',
+  },
+  messageMetaRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  messageMetaButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  messageMetaButtonUser: {
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  messageMetaButtonPressed: {
+    opacity: 0.85,
+  },
+  messageMetaButtonText: {
+    color: '#9ca3af',
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 16,
+    marginTop: -2,
+  },
+  messageMetaButtonTextUser: {
+    color: 'rgba(255,255,255,0.9)',
+  },
+  scrollToBottomWrap: {
+    position: 'absolute',
+    right: 14,
+    bottom: 84,
+  },
+  scrollToBottomButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0f1524',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+  },
+  scrollToBottomButtonPressed: {
+    opacity: 0.9,
+  },
+  scrollToBottomText: {
+    color: '#e5e7eb',
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: -1,
   },
   composer: {
     paddingHorizontal: 12,
@@ -1472,8 +3127,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  stopButton: {
+    height: 44,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sendButtonPressed: {
     opacity: 0.85,
+  },
+  stopButtonPressed: {
+    opacity: 0.9,
   },
   sendButtonDisabled: {
     opacity: 0.5,
@@ -1482,6 +3148,11 @@ const styles = StyleSheet.create({
     color: '#0b0f19',
     fontSize: 14,
     fontWeight: '800',
+  },
+  stopButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
   },
   modalSafe: {
     flex: 1,
@@ -1505,6 +3176,73 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     gap: 10,
+  },
+  approvalCard: {
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0f1524',
+    overflow: 'hidden',
+    maxHeight: 380,
+  },
+  approvalDetail: {
+    color: '#e5e7eb',
+    fontSize: 12,
+    lineHeight: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontFamily: Platform.select({
+      ios: 'Menlo',
+      android: 'monospace',
+      default: 'monospace',
+    }),
+  },
+  approvalButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  approvalApproveButton: {
+    flex: 1,
+    backgroundColor: '#22c55e',
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  approvalApproveText: {
+    color: '#052e16',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  approvalSessionButton: {
+    flex: 1,
+    backgroundColor: '#2563eb',
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  approvalSessionText: {
+    color: '#f9fafb',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  approvalDenyButton: {
+    marginTop: 10,
+    backgroundColor: '#ef4444',
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  approvalDenyText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  approvalButtonPressed: {
+    opacity: 0.9,
   },
   diagRow: {
     flexDirection: 'row',
@@ -1665,6 +3403,146 @@ const styles = StyleSheet.create({
     fontSize: 18,
     paddingLeft: 6,
   },
+  projectHeaderWrap: {
+    marginTop: 10,
+  },
+  projectHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0b0f19',
+  },
+  projectHeaderRowActive: {
+    borderColor: '#3353a8',
+  },
+  projectHeaderLeftPressable: {
+    flex: 1,
+    minWidth: 0,
+  },
+  projectHeaderLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  projectHeaderTitle: {
+    color: '#f9fafb',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  projectHeaderMeta: {
+    color: '#9ca3af',
+    fontSize: 12,
+  },
+  projectHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  projectHeaderNewButton: {
+    width: 34,
+    height: 28,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0f1524',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  projectHeaderNewText: {
+    color: '#e5e7eb',
+    fontSize: 16,
+    fontWeight: '900',
+    marginTop: -2,
+  },
+  projectHeaderChevron: {
+    color: '#9ca3af',
+    fontSize: 16,
+    paddingLeft: 4,
+  },
+  projectHeaderChevronButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  projectCollapsedHintWrap: {
+    paddingHorizontal: 12,
+    paddingTop: 6,
+  },
+  threadsActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 4,
+  },
+  threadsActionsLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  threadsActionsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  threadRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  threadRowActive: {
+    borderColor: '#3353a8',
+  },
+  threadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0f1524',
+    marginLeft: 14,
+  },
+  threadRowLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  threadRowTitle: {
+    color: '#f9fafb',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  threadRowMeta: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontFamily: Platform.select({
+      ios: 'Menlo',
+      android: 'monospace',
+      default: 'monospace',
+    }),
+  },
+  threadActivePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0b0f19',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  threadActivePillText: {
+    color: '#22c55e',
+    fontSize: 11,
+    fontWeight: '900',
+  },
   filesContentCard: {
     flex: 1,
     borderRadius: 14,
@@ -1705,5 +3583,178 @@ const styles = StyleSheet.create({
   },
   filesSearchInput: {
     flex: 1,
+  },
+  activityBody: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  activityTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  activityPathText: {
+    color: '#9ca3af',
+    fontSize: 12,
+    flex: 1,
+  },
+  activityHint: {
+    color: '#6b7280',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  activityContentCard: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0f1524',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  activityCodeText: {
+    color: '#e5e7eb',
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: Platform.select({
+      ios: 'Menlo',
+      android: 'monospace',
+      default: 'monospace',
+    }),
+  },
+  activitySummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 4,
+  },
+  activitySummaryLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  activityBranchText: {
+    color: '#f9fafb',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  activitySummaryMeta: {
+    color: '#9ca3af',
+    fontSize: 12,
+  },
+  gitEntryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0f1524',
+  },
+  gitEntryLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  gitCodePill: {
+    minWidth: 44,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0b0f19',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gitCodeText: {
+    color: '#e5e7eb',
+    fontSize: 12,
+    fontWeight: '900',
+    fontFamily: Platform.select({
+      ios: 'Menlo',
+      android: 'monospace',
+      default: 'monospace',
+    }),
+  },
+  gitPathWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  gitPathText: {
+    color: '#f9fafb',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  gitFromText: {
+    color: '#9ca3af',
+    fontSize: 12,
+  },
+  commitRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0f1524',
+  },
+  commitHash: {
+    color: '#9ca3af',
+    fontSize: 12,
+    fontWeight: '900',
+    fontFamily: Platform.select({
+      ios: 'Menlo',
+      android: 'monospace',
+      default: 'monospace',
+    }),
+  },
+  commitSubject: {
+    color: '#f9fafb',
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  menuOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  menuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  menuSheet: {
+    marginHorizontal: 12,
+    marginBottom: 14,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: '#0f1524',
+    overflow: 'hidden',
+  },
+  menuItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  menuItemPressed: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  menuItemText: {
+    color: '#f9fafb',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  menuItemTextDestructive: {
+    color: '#f87171',
+  },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#273244',
   },
 });

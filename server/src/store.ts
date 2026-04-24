@@ -15,6 +15,7 @@ export type Conversation = {
   clientId: string;
   createdAt: string;
   updatedAt: string;
+  codexThreadId?: string | null;
   transcript: TranscriptMessage[];
 };
 
@@ -69,6 +70,10 @@ export async function getOrCreateConversation(
         typeof parsed?.createdAt === "string" ? parsed.createdAt : nowIso(),
       updatedAt:
         typeof parsed?.updatedAt === "string" ? parsed.updatedAt : nowIso(),
+      codexThreadId:
+        typeof (parsed as any)?.codexThreadId === "string"
+          ? ((parsed as any).codexThreadId as string)
+          : null,
       transcript: Array.isArray(parsed?.transcript)
         ? (parsed?.transcript as TranscriptMessage[]).filter(
             (m) =>
@@ -93,6 +98,7 @@ export async function getOrCreateConversation(
     clientId: normalized,
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    codexThreadId: null,
     transcript: [],
   };
   conversations.set(normalized, convo);
@@ -106,4 +112,3 @@ export async function saveConversation(convo: Conversation): Promise<void> {
   const filePath = conversationPath(convo.clientId);
   await fs.writeFile(filePath, JSON.stringify(convo, null, 2), "utf-8");
 }
-

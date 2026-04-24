@@ -20,7 +20,7 @@ export type SearchMatch = {
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultRoot = path.resolve(moduleDir, "..", "..");
-export const workspaceRoot = path.resolve(
+export const DEFAULT_WORKSPACE_ROOT = path.resolve(
   process.env.CODEX_WORKSPACE_ROOT ?? defaultRoot,
 );
 
@@ -62,7 +62,7 @@ function toPosixPath(rel: string) {
 }
 
 export function workspaceRootName() {
-  return path.basename(workspaceRoot) || "workspace";
+  return path.basename(DEFAULT_WORKSPACE_ROOT) || "workspace";
 }
 
 export function isBlockedRelPath(relPath: string) {
@@ -83,7 +83,16 @@ export function isBlockedRelPath(relPath: string) {
   return false;
 }
 
-export function resolveWorkspacePath(relPath: string) {
+function normalizeRoot(root: string) {
+  return path.resolve(root.trim() || ".");
+}
+
+export function workspaceRootNameFor(root: string) {
+  return path.basename(normalizeRoot(root)) || "workspace";
+}
+
+export function resolveWorkspacePath(root: string, relPath: string) {
+  const workspaceRoot = normalizeRoot(root);
   const trimmed = relPath.trim();
   const rel = trimmed === "" ? "." : trimmed;
   if (path.isAbsolute(rel)) return null;
@@ -94,8 +103,8 @@ export function resolveWorkspacePath(relPath: string) {
   return { abs, rel: relative === "" ? "." : relative };
 }
 
-export async function listDir(relPath: string) {
-  const resolved = resolveWorkspacePath(relPath);
+export async function listDir(root: string, relPath: string) {
+  const resolved = resolveWorkspacePath(root, relPath);
   if (!resolved) throw new Error("path_not_allowed");
 
   const dirents = await fs.readdir(resolved.abs, { withFileTypes: true });
@@ -127,8 +136,8 @@ export async function listDir(relPath: string) {
   return { path: resolved.rel === "." ? "" : toPosixPath(resolved.rel), entries };
 }
 
-export async function readTextFile(relPath: string, maxBytes: number) {
-  const resolved = resolveWorkspacePath(relPath);
+export async function readTextFile(root: string, relPath: string, maxBytes: number) {
+  const resolved = resolveWorkspacePath(root, relPath);
   if (!resolved) throw new Error("path_not_allowed");
 
   const st = await fs.stat(resolved.abs);
@@ -168,11 +177,13 @@ function runRg(args: string[], cwd: string) {
 }
 
 export async function searchWorkspace(
+  root: string,
   query: string,
   relPath: string | undefined,
   limit: number,
 ) {
-  const searchRoot = resolveWorkspacePath(relPath ?? ".");
+  const workspaceRoot = normalizeRoot(root);
+  const searchRoot = resolveWorkspacePath(workspaceRoot, relPath ?? ".");
   if (!searchRoot) throw new Error("path_not_allowed");
 
   const capped = Math.max(1, Math.min(limit, 500));
@@ -224,4 +235,3 @@ export async function searchWorkspace(
 
   return { matches, truncated: matches.length >= capped };
 }
-

@@ -22,18 +22,62 @@ export const SearchMatchSchema = z.object({
   text: z.string(),
 });
 
+export const GitStatusEntrySchema = z.object({
+  path: z.string().min(1),
+  code: z.string().min(1),
+  fromPath: z.string().min(1).optional(),
+});
+
+export const GitCommitSchema = z.object({
+  hash: z.string().min(1),
+  subject: z.string().min(1),
+});
+
+export const ThreadSummarySchema = z.object({
+  id: z.string().min(1),
+  preview: z.string(),
+  cwd: z.string(),
+  createdAt: z.number().int().nullable(),
+  updatedAt: z.number().int().nullable(),
+  statusType: z.string().nullable(),
+  name: z.string().nullable(),
+});
+
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("ping"),
   }),
   z.object({
+    type: z.literal("abort"),
+  }),
+  z.object({
     type: z.literal("reset"),
+  }),
+  z.object({
+    type: z.literal("approval_response"),
+    requestId: z.string().min(1),
+    decision: z.enum(["accept", "acceptForSession", "decline", "cancel"]),
   }),
   z.object({
     type: z.literal("user_message"),
     id: z.string().min(1).optional(),
     createdAt: z.string().min(1).optional(),
     text: z.string().min(1).max(20_000),
+  }),
+  z.object({
+    type: z.literal("git_status"),
+    requestId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("git_diff"),
+    requestId: z.string().min(1),
+    path: z.string().min(1),
+    maxBytes: z.number().int().positive().optional(),
+  }),
+  z.object({
+    type: z.literal("git_log"),
+    requestId: z.string().min(1),
+    limit: z.number().int().positive().max(100).optional(),
   }),
   z.object({
     type: z.literal("list_dir"),
@@ -53,6 +97,20 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     path: z.string().optional(),
     limit: z.number().int().positive().max(500).optional(),
   }),
+  z.object({
+    type: z.literal("threads_list"),
+    requestId: z.string().min(1),
+    limit: z.number().int().positive().max(200).optional(),
+    searchTerm: z.string().max(200).optional(),
+  }),
+  z.object({
+    type: z.literal("thread_select"),
+    threadId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("thread_start"),
+    cwd: z.string().min(1).optional(),
+  }),
 ]);
 
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
@@ -65,6 +123,26 @@ export type ServerMessage =
       clientId: string;
     }
   | {
+      type: "thread_active";
+      threadId: string;
+      cwd: string;
+      model: string;
+    }
+  | {
+      type: "threads";
+      requestId: string;
+      threads: z.infer<typeof ThreadSummarySchema>[];
+      nextCursor?: string;
+    }
+  | {
+      type: "approval_request";
+      requestId: string;
+      kind: "command" | "fileChange" | "permissions" | "unknown";
+      title: string;
+      detail: string;
+      data?: unknown;
+    }
+  | {
       type: "workspace_info";
       rootName: string;
       maxFileBytes: number;
@@ -72,6 +150,25 @@ export type ServerMessage =
   | {
       type: "history";
       messages: z.infer<typeof TranscriptMessageSchema>[];
+    }
+  | {
+      type: "git_status";
+      requestId: string;
+      branch: string;
+      entries: z.infer<typeof GitStatusEntrySchema>[];
+      hiddenCount?: number;
+    }
+  | {
+      type: "git_diff";
+      requestId: string;
+      path: string;
+      diff: string;
+      truncated?: boolean;
+    }
+  | {
+      type: "git_log";
+      requestId: string;
+      commits: z.infer<typeof GitCommitSchema>[];
     }
   | {
       type: "dir_list";

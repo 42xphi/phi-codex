@@ -1,6 +1,6 @@
-# Codex Remote Chat (Expo + WS + Tailscale)
+# Codex Remote Chat (Expo + WS + Cloudflare/Tailscale)
 
-ChatGPT-style mobile UI (Expo) that talks to a Mac-hosted WebSocket server, which streams responses from OpenAI.
+ChatGPT-style mobile UI (Expo) that talks to a Mac-hosted WebSocket server, which proxies requests to your local Codex.app (`codex app-server`) so you can chat with Codex from your phone (with full thread history + workspace browsing).
 
 ## 1) Backend (Mac)
 
@@ -9,12 +9,24 @@ From the repo root:
 ```bash
 cd server
 cp .env.example .env
-# edit .env (OPENAI_API_KEY, CODEX_REMOTE_TOKEN, etc.)
+# edit .env (CODEX_REMOTE_TOKEN, etc.)
 npm install
 npm run dev
 ```
 
 The server listens on `0.0.0.0:8787` by default.
+
+### Codex app-server
+
+The server connects to `ws://127.0.0.1:8788` by default and will attempt to autostart it via the Codex.app binary.
+
+### Optional: expose your local KB (for Pi / Think)
+
+The server can also expose authenticated KB endpoints (served from your Mac) if you set `KB_CWD` in `server/.env`:
+
+- `GET /kb/health`
+- `POST /kb/search` `{ q, limit }`
+- `POST /kb/doc` `{ id, maxChars }`
 
 ### Tailscale
 
@@ -24,6 +36,10 @@ The server listens on `0.0.0.0:8787` by default.
 - If macOS Firewall prompts for Node, allow incoming connections for the server.
 
 Optional: expose/lock down via Tailscale ACLs or `tailscale serve`.
+
+### Cloudflare Tunnel (recommended)
+
+Expose the server over `wss://` so the phone works from any Wi‑Fi/LTE. This repo is typically configured to use `wss://ios.phi.pe`.
 
 ## 2) Mobile app (phone)
 
@@ -37,8 +53,36 @@ npm run start
 
 Open in Expo Go (or a dev build) and send a message — responses stream in.
 
+## 3) Web UI (Brainwave-based)
+
+This repo also includes a desktop-friendly web UI at `apps/web` (Brainwave template), wired to the same WebSocket backend (threads + files + git + streaming chat).
+
+### Dev
+
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
+Then open `http://localhost:3000` and use **Settings** (left sidebar) to set:
+- WS URL (e.g. `ws://127.0.0.1:8787` or `wss://ios.phi.pe`)
+- Token (`CODEX_REMOTE_TOKEN`)
+- Client ID (same across devices to sync)
+
+### Serve from the backend (recommended for Cloudflare Tunnel)
+
+The backend can serve the exported web build from `apps/web/out`:
+
+```bash
+cd apps/web
+npm run build  # outputs ./out
+```
+
+Then restart the backend; `https://ios.phi.pe` will serve the web UI if the folder exists.
+
 ## Notes
 
-- The API key stays on the Mac. The phone connects only to your WS server.
-- If you want true “OpenAI Realtime” (upstream WebSocket), the server is structured to swap the OpenAI transport easily.
+- The phone connects only to your WS server; Codex runs on your Mac.
+- Use the same **Client ID** on every device if you want them to sync the same “last active” Codex thread.
 - Expo SDK 54 expects a recent Node.js 20.x (or newer). If `expo start` complains, upgrade Node on the Mac.

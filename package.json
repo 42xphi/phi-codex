@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "dev:server": "npm --prefix server run dev",
-    "dev:mobile": "npm --prefix apps/mobile run start"
+    "dev:mobile": "npm --prefix apps/mobile run start",
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build"
   }
 }

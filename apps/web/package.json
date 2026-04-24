@@ -1,0 +1,51 @@
+{
+  "name": "brainwave",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "react": "^18",
+    "react-dom": "^18",
+    "next": "14.2.3",
+    "@chakra-ui/next-js": "^2.2.0",
+    "@chakra-ui/react": "^2.8.2",
+    "@emotion/styled": "^11.11.5",
+    "@headlessui/react": "^1.7.13",
+    "@headlessui/tailwindcss": "^0.1.2",
+    "@types/react-copy-to-clipboard": "^5.0.4",
+    "@types/react-datepicker": "^4.10.0",
+    "@types/react-input-mask": "^3.0.2",
+    "@types/react-syntax-highlighter": "^15.5.6",
+    "@types/scroll-lock": "^2.1.0",
+    "framer-motion": "^11.1.7",
+    "rc-slider": "^10.1.1",
+    "react-copy-to-clipboard": "^5.1.0",
+    "react-datepicker": "^4.10.0",
+    "react-hot-toast": "^2.4.0",
+    "react-input-mask": "^3.0.0-alpha.2",
+    "react-responsive": "^9.0.2",
+    "react-select": "^5.7.2",
+    "react-syntax-highlighter": "^15.5.0",
+    "react-textarea-autosize": "^8.4.0",
+    "scroll-lock": "^2.1.5",
+    "tailwind-merge": "^1.10.0",
+    "tailwind-scrollbar": "^3.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "postcss": "^8",
+    "postcss-import": "^15.1.0",
+    "tailwindcss": "^3.4.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.3",
+    "@rvxlab/tailwind-plugin-ios-full-height": "^1.1.0"
+  }
+}
