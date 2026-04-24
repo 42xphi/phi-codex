@@ -1,55 +1,33 @@
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { srcery } from "react-syntax-highlighter/dist/cjs/styles/hljs";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+import rehypeSanitize from "rehype-sanitize";
 
-type MessageBlock =
-    | { type: "text"; text: string }
-    | { type: "code"; lang?: string; code: string };
+function extractLanguage(className?: string) {
+    if (!className) return undefined;
+    const match = className.match(/language-([A-Za-z0-9_+-]+)/);
+    return match?.[1];
+}
 
-function parseMessageBlocks(rawText: string): MessageBlock[] {
-    const text = rawText ?? "";
-    if (!text.includes("```")) return [{ type: "text", text }];
-
-    const blocks: MessageBlock[] = [];
-    let rest = text;
-
-    while (rest.length > 0) {
-        const fenceStart = rest.indexOf("```");
-        if (fenceStart === -1) {
-            blocks.push({ type: "text", text: rest });
-            break;
-        }
-
-        if (fenceStart > 0) {
-            blocks.push({ type: "text", text: rest.slice(0, fenceStart) });
-        }
-
-        const afterStart = rest.slice(fenceStart + 3);
-        const fenceEnd = afterStart.indexOf("```");
-        if (fenceEnd === -1) {
-            blocks.push({ type: "text", text: rest.slice(fenceStart) });
-            break;
-        }
-
-        const fenceBody = afterStart.slice(0, fenceEnd);
-        rest = afterStart.slice(fenceEnd + 3);
-
-        const firstNewline = fenceBody.indexOf("\n");
-        let lang: string | undefined;
-        let code = fenceBody;
-        if (firstNewline !== -1) {
-            const firstLine = fenceBody.slice(0, firstNewline).trim();
-            const remaining = fenceBody.slice(firstNewline + 1);
-            if (firstLine && !firstLine.includes(" ")) {
-                lang = firstLine;
-                code = remaining;
-            }
-        }
-        code = code.replace(/\n$/, "");
-
-        blocks.push({ type: "code", lang, code });
+function isSafeHref(href: unknown) {
+    if (typeof href !== "string") return false;
+    const value = href.trim();
+    if (!value) return false;
+    if (value.startsWith("#")) return true;
+    try {
+        const url = new URL(value, "https://example.com");
+        const protocol = url.protocol.toLowerCase();
+        return (
+            protocol === "http:" ||
+            protocol === "https:" ||
+            protocol === "mailto:" ||
+            protocol === "tel:"
+        );
+    } catch {
+        return false;
     }
-
-    return blocks;
 }
 
 type MessageContentProps = {
@@ -57,54 +35,158 @@ type MessageContentProps = {
 };
 
 const MessageContent = ({ text }: MessageContentProps) => {
-    const blocks = parseMessageBlocks(text);
-    if (blocks.length === 1 && blocks[0]?.type === "text") {
-        return (
-            <div className="whitespace-pre-wrap break-words">
-                {blocks[0].text}
-            </div>
-        );
-    }
+    const markdown = text ?? "";
 
     return (
-        <div className="space-y-4">
-            {blocks.map((b, idx) =>
-                b.type === "text" ? (
-                    <div
-                        key={`t:${idx}`}
-                        className="whitespace-pre-wrap break-words"
-                    >
-                        {b.text}
-                    </div>
-                ) : (
-                    <div
-                        key={`c:${idx}`}
-                        className="rounded-xl overflow-hidden border border-n-3 dark:border-n-5"
-                    >
-                        <div className="px-4 py-2 bg-n-3/70 caption1 text-n-4 dark:bg-n-6">
-                            {b.lang ? b.lang : "code"}
-                        </div>
-                        <SyntaxHighlighter
-                            language={b.lang}
-                            style={srcery}
-                            customStyle={{
-                                margin: 0,
-                                maxWidth: "100%",
-                                padding: "0.9rem 1rem 1rem",
-                                background: "transparent",
-                            }}
-                            codeTagProps={{
-                                style: { whiteSpace: "pre-wrap" },
-                            }}
+        <div className="whitespace-normal break-words">
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkBreaks]}
+                rehypePlugins={[rehypeSanitize]}
+                components={{
+                    a: ({ href, children, ...props }: any) => {
+                        const safeHref = isSafeHref(href) ? String(href) : undefined;
+                        return (
+                            <a
+                                href={safeHref}
+                                target={safeHref ? "_blank" : undefined}
+                                rel={safeHref ? "noopener noreferrer" : undefined}
+                                className="underline underline-offset-2 decoration-current/40 hover:decoration-current/80"
+                                {...props}
+                            >
+                                {children}
+                            </a>
+                        );
+                    },
+                    img: () => null,
+                    pre: ({ children }: any) => <>{children}</>,
+                    code: ({ inline, className, children, ...props }: any) => {
+                        const raw = String(children ?? "");
+                        const code = raw.replace(/\n$/, "");
+                        if (inline) {
+                            return (
+                                <code
+                                    className="rounded-md bg-ios-surface/70 px-1.5 py-0.5 font-mono text-[0.85em] text-current"
+                                    {...props}
+                                >
+                                    {children}
+                                </code>
+                            );
+                        }
+
+                        const lang = extractLanguage(className);
+                        return (
+                            <div className="my-3 rounded-xl overflow-hidden border border-ios-separator/30 bg-n-7/90 shadow-[0_0.5rem_1.5rem_-1.25rem_rgba(0,0,0,0.45)]">
+                                <div className="px-4 py-2 bg-black/35 text-[0.75rem] leading-4 font-semibold text-white/70">
+                                    {lang ?? "code"}
+                                </div>
+                                <SyntaxHighlighter
+                                    language={lang}
+                                    style={srcery}
+                                    customStyle={{
+                                        margin: 0,
+                                        maxWidth: "100%",
+                                        padding: "0.9rem 1rem 1rem",
+                                        background: "transparent",
+                                    }}
+                                    codeTagProps={{
+                                        style: { whiteSpace: "pre-wrap" },
+                                    }}
+                                >
+                                    {code}
+                                </SyntaxHighlighter>
+                            </div>
+                        );
+                    },
+                    p: ({ children, ...props }: any) => (
+                        <p
+                            className="my-2 leading-6 first:mt-0 last:mb-0"
+                            {...props}
                         >
-                            {b.code}
-                        </SyntaxHighlighter>
-                    </div>
-                )
-            )}
+                            {children}
+                        </p>
+                    ),
+                    ul: ({ children, ...props }: any) => (
+                        <ul className="my-2 list-disc pl-5 space-y-1" {...props}>
+                            {children}
+                        </ul>
+                    ),
+                    ol: ({ children, ...props }: any) => (
+                        <ol
+                            className="my-2 list-decimal pl-5 space-y-1"
+                            {...props}
+                        >
+                            {children}
+                        </ol>
+                    ),
+                    li: ({ children, ...props }: any) => (
+                        <li className="leading-6" {...props}>
+                            {children}
+                        </li>
+                    ),
+                    blockquote: ({ children, ...props }: any) => (
+                        <blockquote
+                            className="my-3 border-l-2 border-ios-separator/60 pl-4 text-current/80 italic"
+                            {...props}
+                        >
+                            {children}
+                        </blockquote>
+                    ),
+                    h1: ({ children, ...props }: any) => (
+                        <h1
+                            className="mt-4 mb-2 text-[1.15rem] font-semibold leading-snug"
+                            {...props}
+                        >
+                            {children}
+                        </h1>
+                    ),
+                    h2: ({ children, ...props }: any) => (
+                        <h2
+                            className="mt-4 mb-2 text-[1.05rem] font-semibold leading-snug"
+                            {...props}
+                        >
+                            {children}
+                        </h2>
+                    ),
+                    h3: ({ children, ...props }: any) => (
+                        <h3 className="mt-3 mb-1 font-semibold" {...props}>
+                            {children}
+                        </h3>
+                    ),
+                    hr: ({ ...props }: any) => (
+                        <hr className="my-4 border-ios-separator/60" {...props} />
+                    ),
+                    table: ({ children, ...props }: any) => (
+                        <div className="my-3 overflow-x-auto">
+                            <table
+                                className="min-w-full border-collapse text-[0.9em]"
+                                {...props}
+                            >
+                                {children}
+                            </table>
+                        </div>
+                    ),
+                    th: ({ children, ...props }: any) => (
+                        <th
+                            className="border border-ios-separator/60 bg-ios-surface2 px-3 py-2 text-left font-semibold"
+                            {...props}
+                        >
+                            {children}
+                        </th>
+                    ),
+                    td: ({ children, ...props }: any) => (
+                        <td
+                            className="border border-ios-separator/60 px-3 py-2 align-top"
+                            {...props}
+                        >
+                            {children}
+                        </td>
+                    ),
+                }}
+            >
+                {markdown}
+            </ReactMarkdown>
         </div>
     );
 };
 
 export default MessageContent;
-

@@ -25,11 +25,11 @@ const config: Config = {
         extend: {
             colors: {
                 primary: {
-                    1: "#0084FF",
-                    2: "#3FDD78",
+                    1: "#007AFF",
+                    2: "#34C759",
                 },
                 accent: {
-                    1: "#D84C10",
+                    1: "#FF3B30",
                     2: "#3E90F0",
                     3: "#8E55EA",
                     4: "#8C6584",
@@ -37,12 +37,24 @@ const config: Config = {
                 },
                 n: {
                     1: "#FEFEFE",
-                    2: "#F3F5F7",
-                    3: "#E8ECEF",
-                    4: "#6C7275",
-                    5: "#343839",
-                    6: "#232627",
-                    7: "#141718",
+                    2: "#F2F2F7",
+                    3: "#E5E5EA",
+                    4: "#8E8E93",
+                    5: "#3A3A3C",
+                    6: "#1C1C1E",
+                    7: "#000000",
+                },
+                ios: {
+                    bg: "rgb(var(--ios-bg) / <alpha-value>)",
+                    surface: "rgb(var(--ios-surface) / <alpha-value>)",
+                    surface2: "rgb(var(--ios-surface-2) / <alpha-value>)",
+                    separator: "rgb(var(--ios-separator) / <alpha-value>)",
+                    label: "rgb(var(--ios-label) / <alpha-value>)",
+                    secondary: "rgb(var(--ios-secondary-label) / <alpha-value>)",
+                    blue: "rgb(var(--ios-blue) / <alpha-value>)",
+                    green: "rgb(var(--ios-green) / <alpha-value>)",
+                    red: "rgb(var(--ios-red) / <alpha-value>)",
+                    bubbleAssistant: "rgb(var(--ios-bubble-assistant) / <alpha-value>)",
                 },
             },
             spacing: {
@@ -113,6 +125,20 @@ const config: Config = {
                 body: {
                     "@apply bg-n-7 text-[1rem] leading-6 -tracking-[.01em] text-n-7 antialiased md:bg-n-1 dark:text-n-1 dark:md:bg-n-6":
                         {},
+                },
+            });
+            addUtilities({
+                ".pt-safe": { paddingTop: "env(safe-area-inset-top)" },
+                ".pb-safe": { paddingBottom: "env(safe-area-inset-bottom)" },
+                ".pl-safe": { paddingLeft: "env(safe-area-inset-left)" },
+                ".pr-safe": { paddingRight: "env(safe-area-inset-right)" },
+                ".px-safe": {
+                    paddingLeft: "env(safe-area-inset-left)",
+                    paddingRight: "env(safe-area-inset-right)",
+                },
+                ".py-safe": {
+                    paddingTop: "env(safe-area-inset-top)",
+                    paddingBottom: "env(safe-area-inset-bottom)",
                 },
             });
             addComponents({

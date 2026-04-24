@@ -2,6 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+    :root {
+        /* iOS system colors (light) */
+        --ios-bg: 242 242 247; /* systemGroupedBackground */
+        --ios-surface: 255 255 255; /* systemBackground */
+        --ios-surface-2: 242 242 247; /* secondarySystemBackground */
+        --ios-separator: 209 209 214; /* separator */
+
+        --ios-label: 0 0 0; /* label */
+        --ios-secondary-label: 60 60 67; /* secondaryLabel (use /0.6 alpha) */
+
+        --ios-blue: 0 122 255; /* systemBlue */
+        --ios-green: 52 199 89; /* systemGreen */
+        --ios-red: 255 59 48; /* systemRed */
+
+        --ios-bubble-assistant: 229 229 234; /* systemGray5 */
+    }
+
+    .dark,
+    [data-theme="dark"] {
+        /* iOS system colors (dark) */
+        --ios-bg: 0 0 0; /* systemGroupedBackground */
+        --ios-surface: 28 28 30; /* secondarySystemBackground */
+        --ios-surface-2: 44 44 46; /* tertiarySystemBackground */
+        --ios-separator: 56 56 58; /* separator */
+
+        --ios-label: 255 255 255;
+        --ios-secondary-label: 235 235 245;
+
+        --ios-blue: 10 132 255; /* systemBlue (dark) */
+        --ios-green: 48 209 88;
+        --ios-red: 255 69 58;
+
+        --ios-bubble-assistant: 44 44 46;
+    }
+
+    html,
+    body {
+        height: 100%;
+    }
+}
+
 @layer components {
     .react-datepicker {
         @apply !border-n-3 !rounded-lg !font-inter shadow-[0_0_1rem_0.25rem_rgba(0,0,0,0.04),0_2rem_2rem_-1rem_rgba(0,0,0,0.1)] overflow-hidden dark:bg-n-7 dark:!border-n-5;

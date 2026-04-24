@@ -2,9 +2,6 @@ import { ChangeEventHandler } from "react";
 import TextareaAutosize from "react-textarea-autosize";
 import { twMerge } from "tailwind-merge";
 import Icon from "@/components/Icon";
-import Image from "@/components/Image";
-import AddFile from "./AddFile";
-import Files from "./Files";
 
 type MessageProps = {
     value: any;
@@ -25,21 +22,18 @@ const Message = ({
     image,
     document,
 }: MessageProps) => {
-    const stylesButton = "group absolute right-3 bottom-2 w-10 h-10";
     const canSend = !disabled && String(value ?? "").trim().length > 0;
 
     return (
-        <div className="relative z-5 px-10 pb-6 before:absolute before:-top-6 before:left-0 before:right-6 before:bottom-1/2 before:bg-gradient-to-b before:to-n-1 before:from-n-1/0 before:pointer-events-none 2xl:px-6 2xl:pb-5 md:px-4 md:pb-4 dark:before:to-n-6 dark:before:from-n-6/0">
-            <div className="relative z-2 border-2 border-n-3 rounded-xl overflow-hidden dark:border-n-5">
-                {(image || document) && (
-                    <Files image={image} document={document} />
-                )}
-                <div className="relative flex items-center min-h-[3.5rem] px-16 text-0">
-                    <AddFile />
+        <div
+            className="shrink-0 border-t border-ios-separator/60 bg-ios-surface/80 backdrop-blur supports-[backdrop-filter]:bg-ios-surface/60"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
+            <div className="flex items-end gap-3 px-10 2xl:px-6 md:px-4 py-3">
+                <div className="flex-1 rounded-[1.25rem] border border-ios-separator/60 bg-ios-surface2 px-4 py-2">
                     <TextareaAutosize
-                        className="w-full py-3 bg-transparent body2 text-n-7 outline-none resize-none placeholder:text-n-4/75 dark:text-n-1 dark:placeholder:text-n-4"
+                        className="w-full bg-transparent text-[0.95rem] leading-6 text-ios-label outline-none resize-none placeholder:text-ios-secondary/60"
                         maxRows={5}
-                        autoFocus
                         value={value}
                         onChange={onChange}
                         onKeyDown={(e) => {
@@ -48,43 +42,25 @@ const Message = ({
                                 if (canSend) onSend?.();
                             }
                         }}
-                        placeholder={placeholder || "Ask Brainwave anything"}
+                        placeholder={placeholder || "Message Codex…"}
+                        disabled={Boolean(disabled)}
                     />
-                    {value === "" ? (
-                        <button className={`${stylesButton}`}>
-                            <Icon
-                                className="fill-n-4 transition-colors group-hover:fill-primary-1"
-                                name="recording"
-                            />
-                        </button>
-                    ) : (
-                        <button
-                            className={twMerge(
-                                `${stylesButton} bg-primary-1 rounded-xl transition-colors hover:bg-primary-1/90`,
-                                !canSend && "opacity-30 pointer-events-none"
-                            )}
-                            type="button"
-                            onClick={() => {
-                                if (canSend) onSend?.();
-                            }}
-                        >
-                            <Icon className="fill-n-1" name="arrow-up" />
-                        </button>
-                    )}
                 </div>
+
+                <button
+                    className={twMerge(
+                        "inline-flex h-10 w-10 items-center justify-center rounded-full bg-ios-blue text-white shadow-[0_0.5rem_1.5rem_-1rem_rgba(0,0,0,0.35)] transition-opacity",
+                        !canSend && "opacity-30 pointer-events-none",
+                    )}
+                    type="button"
+                    onClick={() => {
+                        if (canSend) onSend?.();
+                    }}
+                    aria-label="Send"
+                >
+                    <Icon className="w-5 h-5 fill-current" name="arrow-up" />
+                </button>
             </div>
-            {/* <div className="relative mt-2 px-5 py-1 bg-n-3 rounded-xl text-0 dark:bg-n-7">
-                <Image
-                    src="/images/audio-1.svg"
-                    width={614}
-                    height={39}
-                    alt="Audio"
-                />
-            </div> */}
-            {/* <div className="relative mt-2 px-4.5 py-2.5 rounded-xl border-2 border-accent-1 text-accent-1 md:py-1">
-                Sorry, voice recognition failed. Please try again or contact
-                support.
-            </div> */}
         </div>
     );
 };

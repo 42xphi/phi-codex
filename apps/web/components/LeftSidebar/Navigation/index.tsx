@@ -25,32 +25,41 @@ const Navigation = ({ visible, items }: NavigationProps) => {
                 item.url ? (
                     <Link
                         className={twMerge(
-                            `flex items-center h-12 base2 font-semibold text-n-3/75 rounded-lg transition-colors hover:text-n-1 ${
-                                pathname === item.url &&
-                                "text-n-1 bg-gradient-to-l from-[#323337] to-[rgba(70,79,111,0.3)] shadow-[inset_0px_0.0625rem_0_rgba(255,255,255,0.05),0_0.25rem_0.5rem_0_rgba(0,0,0,0.1)]"
-                            } ${visible ? "px-3" : "px-5"}`
+                            `group flex items-center h-11 rounded-xl transition-colors ${
+                                visible ? "px-3 justify-center" : "px-4"
+                            } ${
+                                pathname === item.url
+                                    ? "bg-ios-surface2 text-ios-label"
+                                    : "text-ios-secondary/80 hover:bg-ios-surface2 hover:text-ios-label"
+                            }`
                         )}
                         href={item.url}
                         key={index}
                     >
-                        <Icon className={item.color} name={item.icon} />
-                        {!visible && <div className="ml-5">{item.title}</div>}
+                        <Icon className={twMerge("transition-colors", item.color)} name={item.icon} />
+                        {!visible ? (
+                            <div className="ml-4 text-[0.9rem] font-semibold">
+                                {item.title}
+                            </div>
+                        ) : null}
                     </Link>
                 ) : (
                     <button
-                        className={`flex items-center w-full h-12 base2 font-semibold text-n-3/75 rounded-lg transition-colors hover:text-n-1 ${
-                            visible ? "px-3" : "px-5"
-                        }`}
+                        className={twMerge(
+                            "group flex items-center w-full h-11 rounded-xl transition-colors",
+                            visible ? "px-3 justify-center" : "px-4",
+                            "text-ios-secondary/80 hover:bg-ios-surface2 hover:text-ios-label",
+                        )}
                         key={index}
                         onClick={item.onClick}
+                        type="button"
                     >
-                        <Icon className={item.color} name={item.icon} />
-                        {!visible && <div className="ml-5">{item.title}</div>}
-                        {item.title === "Search" && !visible && (
-                            <div className="ml-auto px-2 rounded-md bg-n-4/50 caption1 font-semibold text-n-3">
-                                ⌘ F
+                        <Icon className={twMerge("transition-colors", item.color)} name={item.icon} />
+                        {!visible ? (
+                            <div className="ml-4 text-[0.9rem] font-semibold">
+                                {item.title}
                             </div>
-                        )}
+                        ) : null}
                     </button>
                 )
             )}

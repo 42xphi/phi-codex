@@ -67,20 +67,23 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
         []
     );
 
-    return (
-        <div
-            className={twMerge(
-                `absolute top-0 right-0 bottom-0 flex flex-col w-[22.5rem] bg-n-1 rounded-r-[1.25rem] border-l border-n-3 shadow-[inset_0_1.5rem_3.75rem_rgba(0,0,0,0.1)] 2xl:w-80 lg:rounded-[1.25rem] lg:invisible lg:opacity-0 lg:transition-opacity lg:z-20 lg:border-l-0 lg:shadow-2xl md:fixed md:w-[calc(100%-4rem)] md:border-l md:rounded-none dark:bg-n-6 dark:border-n-5 ${
+        return (
+            <div
+                className={twMerge(
+                `absolute top-0 right-0 bottom-0 flex flex-col w-[22.5rem] bg-ios-surface rounded-r-[1.25rem] border-l border-ios-separator/60 2xl:w-80 lg:rounded-[1.25rem] lg:invisible lg:opacity-0 lg:transition-opacity lg:z-20 lg:border-l-0 lg:shadow-2xl md:fixed md:w-[calc(100%-4rem)] md:rounded-none ${
                     visible && "lg:visible lg:opacity-100"
                 } ${className}`,
-            )}
-        >
-            <div className="flex items-center h-18 px-9 border-b border-n-3 lg:pr-18 md:px-6 dark:border-n-5">
+                )}
+            >
+            <div
+                className="flex items-center h-16 px-6 border-b border-ios-separator/60 lg:pr-18 md:px-4"
+                style={{ paddingTop: "env(safe-area-inset-top)" }}
+            >
                 <div className="min-w-0">
-                    <div className="base2 text-n-7 dark:text-n-1">
+                    <div className="text-[0.9rem] font-semibold text-ios-label truncate">
                         {workspaceRootName || "Workspace"}
                     </div>
-                    <div className="caption1 text-n-4/75 truncate">
+                    <div className="mt-0.5 text-[0.75rem] leading-4 text-ios-secondary/60 truncate">
                         {connectionState === "connected"
                             ? "Connected"
                             : connectionState}
@@ -88,7 +91,7 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                 </div>
                 <div className="ml-auto flex items-center gap-2">
                     <button
-                        className="btn-stroke-light btn-medium h-9 px-3"
+                        className="inline-flex h-9 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-3 text-[0.85rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface"
                         type="button"
                         onClick={() => {
                             if (tab === "git") refreshGitStatus();
@@ -100,17 +103,17 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                 </div>
             </div>
 
-            <div className="px-9 md:px-6 py-4 border-b border-n-3 dark:border-n-5">
-                <div className="flex gap-2">
+            <div className="px-6 md:px-4 py-4 border-b border-ios-separator/60">
+                <div className="flex rounded-xl border border-ios-separator/60 bg-ios-surface2 p-1">
                     {tabs.map((t) => (
                         <button
                             key={t.id}
                             type="button"
                             className={twMerge(
-                                "h-10 px-4 rounded-xl base2 font-semibold transition-colors",
+                                "flex-1 h-9 rounded-lg text-[0.85rem] font-semibold transition-colors",
                                 tab === t.id
-                                    ? "bg-primary-1 text-n-1"
-                                    : "bg-n-2 text-n-4 hover:text-n-7 dark:bg-n-7 dark:text-n-3 dark:hover:text-n-1",
+                                    ? "bg-ios-surface text-ios-label shadow-[0_0.5rem_1.5rem_-1rem_rgba(0,0,0,0.25)]"
+                                    : "text-ios-secondary/70 hover:text-ios-label",
                             )}
                             onClick={() => setTab(t.id)}
                         >
@@ -121,30 +124,30 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
             </div>
 
             {errorBanner ? (
-                <div className="px-9 md:px-6 pt-4">
-                    <div className="p-3 rounded-xl border border-accent-1/50 bg-accent-1/10 text-accent-1">
+                <div className="px-6 md:px-4 pt-4">
+                    <div className="p-3 rounded-xl border border-ios-red/30 bg-ios-red/10 text-ios-red break-words">
                         {errorBanner}
                     </div>
                 </div>
             ) : null}
 
-            <div className="grow overflow-y-auto scroll-smooth px-9 md:px-6 py-6 space-y-6">
+            <div className="grow overflow-y-auto scroll-smooth px-6 md:px-4 py-6 space-y-6">
                 {tab === "files" ? (
                     selectedFileLoading || selectedFilePath ? (
                         <div className="space-y-4">
                             <div className="flex items-center gap-2">
                                 <button
-                                    className="btn-stroke-light btn-medium h-9 px-3"
+                                    className="inline-flex h-9 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-3 text-[0.85rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface"
                                     type="button"
                                     onClick={clearSelectedFile}
                                 >
                                     Back
                                 </button>
-                                <div className="min-w-0 caption1 text-n-4 truncate">
+                                <div className="min-w-0 text-[0.75rem] leading-4 text-ios-secondary/60 truncate">
                                     {selectedFilePath ?? ""}
                                 </div>
                                 <button
-                                    className="btn-stroke-light btn-medium h-9 px-3 ml-auto"
+                                    className="inline-flex h-9 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-3 text-[0.85rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface ml-auto"
                                     type="button"
                                     onClick={() => {
                                         if (selectedFilePath)
@@ -157,15 +160,15 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                             </div>
 
                             {selectedFileTruncated ? (
-                                <div className="caption1 text-n-4/75">
+                                <div className="text-[0.8rem] leading-5 text-ios-secondary/60">
                                     Truncated by the server (only the first
                                     bytes are shown).
                                 </div>
                             ) : null}
 
-                            <div className="rounded-xl border border-n-3 dark:border-n-5 overflow-hidden">
-                                <div className="max-h-[50vh] overflow-auto bg-n-2 dark:bg-n-7">
-                                    <pre className="p-4 caption1 whitespace-pre-wrap break-words text-n-7 dark:text-n-1">
+                            <div className="rounded-xl border border-ios-separator/60 overflow-hidden">
+                                <div className="max-h-[50vh] overflow-auto bg-ios-surface2">
+                                    <pre className="p-4 text-[0.75rem] leading-5 whitespace-pre-wrap break-words text-ios-label">
                                         {selectedFileLoading
                                             ? "Loading…"
                                             : selectedFileContent}
@@ -177,18 +180,18 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                         <div className="space-y-4">
                             <div className="flex items-center gap-2">
                                 <button
-                                    className="btn-stroke-light btn-medium h-9 px-3"
+                                    className="inline-flex h-9 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-3 text-[0.85rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface"
                                     type="button"
                                     onClick={() => listDir(parentDirPath(browsePath))}
                                     disabled={!browsePath}
                                 >
                                     Up
                                 </button>
-                                <div className="min-w-0 caption1 text-n-4 truncate">
+                                <div className="min-w-0 text-[0.75rem] leading-4 text-ios-secondary/60 truncate">
                                     {browsePath ? `./${browsePath}` : "."}
                                 </div>
                                 <button
-                                    className="btn-stroke-light btn-medium h-9 px-3 ml-auto"
+                                    className="inline-flex h-9 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-3 text-[0.85rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface ml-auto"
                                     type="button"
                                     onClick={() => listDir(browsePath)}
                                 >
@@ -196,13 +199,13 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                                 </button>
                             </div>
 
-                            <div className="rounded-xl border border-n-3 dark:border-n-5 overflow-hidden">
-                                <div className="divide-y divide-n-3 dark:divide-n-5">
+                            <div className="rounded-xl border border-ios-separator/60 overflow-hidden">
+                                <div className="divide-y divide-ios-separator/60">
                                     {browseEntries.map((e) => (
                                         <button
                                             key={e.path || `${e.type}:${e.name}`}
                                             type="button"
-                                            className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-n-2 dark:hover:bg-n-7"
+                                            className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-ios-surface2"
                                             onClick={() => {
                                                 if (e.type === "dir")
                                                     listDir(e.path);
@@ -210,14 +213,14 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                                             }}
                                         >
                                             <Icon
-                                                className="fill-n-4"
-                                                name={e.type === "dir" ? "box" : "chat-1"}
+                                                className="fill-current text-ios-secondary/70"
+                                                name={e.type === "dir" ? "folder" : "file"}
                                             />
                                             <div className="min-w-0">
-                                                <div className="base2 font-semibold text-n-7 dark:text-n-1 truncate">
+                                                <div className="text-[0.9rem] font-semibold text-ios-label truncate">
                                                     {e.name}
                                                 </div>
-                                                <div className="caption1 text-n-4/75 truncate">
+                                                <div className="text-[0.75rem] leading-4 text-ios-secondary/60 truncate">
                                                     {e.type === "dir"
                                                         ? "folder"
                                                         : e.path}
@@ -226,7 +229,7 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                                         </button>
                                     ))}
                                     {browseEntries.length === 0 && !browseLoading ? (
-                                        <div className="px-4 py-4 caption1 text-n-4/75">
+                                        <div className="px-4 py-4 text-[0.8rem] leading-5 text-ios-secondary/60">
                                             No files here.
                                         </div>
                                     ) : null}
@@ -240,7 +243,7 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                     <div className="space-y-4">
                         <div className="flex items-center gap-2">
                             <input
-                                className="w-full h-10 px-4 bg-transparent shadow-[inset_0_0_0_0.0625rem_#DADBDC] rounded-xl outline-none caption1 text-n-7 transition-shadow focus:shadow-[inset_0_0_0_0.125rem_#0084FF] placeholder:text-n-4 dark:shadow-[inset_0_0_0_0.0625rem_#2A2E2F] dark:text-n-1 dark:focus:shadow-[inset_0_0_0_0.125rem_#0084FF]"
+                                className="w-full h-10 px-4 rounded-xl border border-ios-separator/60 bg-ios-surface2 text-[0.9rem] text-ios-label outline-none transition-shadow placeholder:text-ios-secondary/60 focus:shadow-[0_0_0_0.125rem_rgba(0,122,255,0.35)]"
                                 placeholder="Search workspace…"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -252,7 +255,7 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                                 }}
                             />
                             <button
-                                className="btn-blue btn-medium h-10 px-4"
+                                className="inline-flex h-10 items-center justify-center rounded-xl bg-ios-blue px-4 text-[0.9rem] font-semibold text-white shadow-[0_0.5rem_1.5rem_-1rem_rgba(0,0,0,0.35)] transition-opacity hover:opacity-90 disabled:opacity-50 disabled:pointer-events-none"
                                 type="button"
                                 onClick={() => searchWorkspace(searchQuery)}
                                 disabled={!searchQuery.trim()}
@@ -261,33 +264,33 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                             </button>
                         </div>
 
-                        <div className="rounded-xl border border-n-3 dark:border-n-5 overflow-hidden">
-                            <div className="divide-y divide-n-3 dark:divide-n-5">
+                        <div className="rounded-xl border border-ios-separator/60 overflow-hidden">
+                            <div className="divide-y divide-ios-separator/60">
                                 {searchMatches.map((m, idx) => (
                                     <button
                                         key={`${m.path}:${m.line}:${m.column}:${idx}`}
                                         type="button"
-                                        className="w-full px-4 py-3 text-left transition-colors hover:bg-n-2 dark:hover:bg-n-7"
+                                        className="w-full px-4 py-3 text-left transition-colors hover:bg-ios-surface2"
                                         onClick={() => {
                                             readFile(m.path);
                                             setTab("files");
                                         }}
                                     >
-                                        <div className="base2 font-semibold text-n-7 dark:text-n-1 truncate">
+                                        <div className="text-[0.9rem] font-semibold text-ios-label truncate">
                                             {m.path}:{m.line}:{m.column}
                                         </div>
-                                        <div className="caption1 text-n-4/75 whitespace-pre-wrap break-words">
+                                        <div className="mt-0.5 text-[0.75rem] leading-5 text-ios-secondary/60 whitespace-pre-wrap break-words">
                                             {m.text}
                                         </div>
                                     </button>
                                 ))}
                                 {searchTruncated ? (
-                                    <div className="px-4 py-3 caption1 text-n-4/75">
+                                    <div className="px-4 py-3 text-[0.75rem] leading-5 text-ios-secondary/60">
                                         Results truncated.
                                     </div>
                                 ) : null}
                                 {searchMatches.length === 0 && !searchLoading ? (
-                                    <div className="px-4 py-4 caption1 text-n-4/75">
+                                    <div className="px-4 py-4 text-[0.8rem] leading-5 text-ios-secondary/60">
                                         No matches.
                                     </div>
                                 ) : null}
@@ -299,14 +302,14 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                 {tab === "git" ? (
                     <div className="space-y-4">
                         <div className="flex items-center gap-3">
-                            <div className="base2 text-n-4/75">
-                                Branch:
+                            <div className="text-[0.85rem] font-semibold text-ios-secondary/70">
+                                Branch
                             </div>
-                            <div className="base2 font-semibold text-n-7 dark:text-n-1 truncate">
+                            <div className="min-w-0 text-[0.9rem] font-semibold text-ios-label truncate">
                                 {gitBranch || "—"}
                             </div>
                             <button
-                                className="btn-stroke-light btn-medium h-9 px-3 ml-auto"
+                                className="inline-flex h-9 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-3 text-[0.85rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface ml-auto"
                                 type="button"
                                 onClick={refreshGitStatus}
                             >
@@ -314,27 +317,27 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                             </button>
                         </div>
 
-                        <div className="rounded-xl border border-n-3 dark:border-n-5 overflow-hidden">
-                            <div className="divide-y divide-n-3 dark:divide-n-5">
+                        <div className="rounded-xl border border-ios-separator/60 overflow-hidden">
+                            <div className="divide-y divide-ios-separator/60">
                                 {gitEntries.map((e) => (
                                     <button
                                         key={`${e.code}:${e.path}`}
                                         type="button"
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-n-2 dark:hover:bg-n-7"
+                                        className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-ios-surface2"
                                         onClick={() => {
                                             clearGitDiff();
                                             gitDiffFile(e.path);
                                         }}
                                     >
-                                        <div className="shrink-0 px-2 py-1 rounded-lg bg-n-3 caption1 font-semibold text-n-4 dark:bg-n-7 dark:text-n-3">
+                                        <div className="shrink-0 px-2 py-1 rounded-lg bg-ios-surface2 text-[0.75rem] font-semibold text-ios-secondary/70">
                                             {e.code}
                                         </div>
                                         <div className="min-w-0">
-                                            <div className="base2 font-semibold text-n-7 dark:text-n-1 truncate">
+                                            <div className="text-[0.9rem] font-semibold text-ios-label truncate">
                                                 {e.path}
                                             </div>
                                             {e.fromPath ? (
-                                                <div className="caption1 text-n-4/75 truncate">
+                                                <div className="text-[0.75rem] leading-4 text-ios-secondary/60 truncate">
                                                     from {e.fromPath}
                                                 </div>
                                             ) : null}
@@ -342,12 +345,12 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                                     </button>
                                 ))}
                                 {gitHiddenCount > 0 ? (
-                                    <div className="px-4 py-3 caption1 text-n-4/75">
+                                    <div className="px-4 py-3 text-[0.75rem] leading-5 text-ios-secondary/60">
                                         {gitHiddenCount} entries hidden.
                                     </div>
                                 ) : null}
                                 {gitEntries.length === 0 && !gitStatusLoading ? (
-                                    <div className="px-4 py-4 caption1 text-n-4/75">
+                                    <div className="px-4 py-4 text-[0.8rem] leading-5 text-ios-secondary/60">
                                         Working tree clean.
                                     </div>
                                 ) : null}
@@ -355,11 +358,11 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <div className="base2 text-n-4/75">
+                            <div className="text-[0.85rem] font-semibold text-ios-secondary/70">
                                 Recent commits
                             </div>
                             <button
-                                className="btn-stroke-light btn-medium h-9 px-3 ml-auto"
+                                className="inline-flex h-9 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-3 text-[0.85rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface ml-auto"
                                 type="button"
                                 onClick={() => refreshGitLog({ limit: 20 })}
                             >
@@ -368,17 +371,17 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                         </div>
 
                         {gitCommits.length > 0 ? (
-                            <div className="rounded-xl border border-n-3 dark:border-n-5 overflow-hidden">
-                                <div className="divide-y divide-n-3 dark:divide-n-5">
+                            <div className="rounded-xl border border-ios-separator/60 overflow-hidden">
+                                <div className="divide-y divide-ios-separator/60">
                                     {gitCommits.map((c) => (
                                         <div
                                             key={c.hash}
                                             className="px-4 py-3"
                                         >
-                                            <div className="caption1 text-n-4/75">
+                                            <div className="text-[0.75rem] leading-4 text-ios-secondary/60">
                                                 {c.hash}
                                             </div>
-                                            <div className="base2 font-semibold text-n-7 dark:text-n-1">
+                                            <div className="mt-0.5 text-[0.9rem] font-semibold text-ios-label">
                                                 {c.subject}
                                             </div>
                                         </div>
@@ -390,14 +393,14 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                         {gitDiffLoading || gitDiffPath ? (
                             <div className="space-y-3">
                                 <div className="flex items-center gap-2">
-                                    <div className="base2 text-n-4/75">
+                                    <div className="text-[0.85rem] font-semibold text-ios-secondary/70">
                                         Diff
                                     </div>
-                                    <div className="base2 font-semibold text-n-7 dark:text-n-1 truncate">
+                                    <div className="min-w-0 text-[0.85rem] font-semibold text-ios-label truncate">
                                         {gitDiffPath ?? ""}
                                     </div>
                                     <button
-                                        className="btn-stroke-light btn-medium h-9 px-3 ml-auto"
+                                        className="inline-flex h-9 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-3 text-[0.85rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface ml-auto"
                                         type="button"
                                         onClick={clearGitDiff}
                                     >
@@ -405,13 +408,13 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
                                     </button>
                                 </div>
                                 {gitDiffTruncated ? (
-                                    <div className="caption1 text-n-4/75">
+                                    <div className="text-[0.75rem] leading-5 text-ios-secondary/60">
                                         Truncated.
                                     </div>
                                 ) : null}
-                                <div className="rounded-xl border border-n-3 dark:border-n-5 overflow-hidden">
-                                    <div className="max-h-[40vh] overflow-auto bg-n-2 dark:bg-n-7">
-                                        <pre className="p-4 caption1 whitespace-pre-wrap break-words text-n-7 dark:text-n-1">
+                                <div className="rounded-xl border border-ios-separator/60 overflow-hidden">
+                                    <div className="max-h-[40vh] overflow-auto bg-ios-surface2">
+                                        <pre className="p-4 text-[0.75rem] leading-5 whitespace-pre-wrap break-words text-ios-label">
                                             {gitDiffLoading
                                                 ? "Loading…"
                                                 : gitDiffText || "(no diff)"}
@@ -428,4 +431,3 @@ const RightSidebar = ({ className, visible }: RightSidebarProps) => {
 };
 
 export default RightSidebar;
-

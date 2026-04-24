@@ -39,9 +39,9 @@ const CodexChatPage = () => {
     const [draft, setDraft] = useState<string>("");
     const endRef = useRef<HTMLDivElement | null>(null);
 
-    const title = useMemo(() => {
-        const wsName = basenameFromPath(activeCwd) || "Codex";
-        const suffix = model ? ` · ${model}` : "";
+    const headerTitle = useMemo(() => basenameFromPath(activeCwd) || "Codex", [activeCwd]);
+
+    const headerSubtitle = useMemo(() => {
         const status =
             connectionState !== "connected"
                 ? connectionState
@@ -52,9 +52,11 @@ const CodexChatPage = () => {
                   : activeThreadId
                     ? "connected"
                     : "starting";
-        const threadShort = activeThreadId ? ` · ${activeThreadId.slice(0, 8)}` : "";
-        return `${wsName} · ${status}${suffix}${threadShort}`;
-    }, [activeCwd, activeThreadId, connectionState, model, pendingThreadId]);
+        const parts = [status];
+        if (model) parts.push(model);
+        if (activeThreadId) parts.push(activeThreadId.slice(0, 8));
+        return parts.join(" · ");
+    }, [activeThreadId, connectionState, model, pendingThreadId]);
 
     const canSend = connectionState === "connected" && Boolean(activeThreadId) && !pendingThreadId;
 
@@ -73,59 +75,62 @@ const CodexChatPage = () => {
     return (
         <>
             <Layout>
-                <Chat title={title}>
-                {connectionState === "connected" && !activeThreadId ? (
-                    <div className="mb-4 p-4 rounded-xl border border-n-3 text-n-4 dark:border-n-5">
-                        Starting Codex…
-                    </div>
-                ) : null}
-                {pendingThreadId ? (
-                    <div className="mb-4 p-4 rounded-xl border border-n-3 text-n-4 dark:border-n-5">
-                        {pendingThreadId === "starting"
-                            ? "Starting a new thread…"
-                            : "Switching threads…"}
-                    </div>
-                ) : null}
-                {messages.length === 0 ? (
-                    <div className="max-w-[50rem]">
-                        <div className="h6 text-n-7 dark:text-n-1">
-                            Remote Codex chat
+                <Chat title={headerTitle} subtitle={headerSubtitle}>
+                    {connectionState === "connected" && !activeThreadId ? (
+                        <div className="mb-4 rounded-[1.25rem] border border-ios-separator/60 bg-ios-surface px-4 py-3 text-ios-secondary/70">
+                            Starting Codex…
                         </div>
-                        <div className="mt-2 body2 text-n-4">
-                            Select a thread in the left sidebar, or click{" "}
-                            <span className="font-semibold">New</span> to start one.
+                    ) : null}
+                    {pendingThreadId ? (
+                        <div className="mb-4 rounded-[1.25rem] border border-ios-separator/60 bg-ios-surface px-4 py-3 text-ios-secondary/70">
+                            {pendingThreadId === "starting"
+                                ? "Starting a new thread…"
+                                : "Switching threads…"}
                         </div>
-                        {!canSend ? (
-                            <div className="mt-4 p-4 rounded-xl border border-n-3 text-n-4 dark:border-n-5">
-                                Status:{" "}
-                                <span className="font-semibold text-n-7 dark:text-n-1">
-                                    {connectionState}
-                                </span>
-                                . Open Settings in the left sidebar to connect.
+                    ) : null}
+                    {messages.length === 0 ? (
+                        <div className="max-w-[50rem]">
+                            <div className="text-[1.05rem] font-semibold text-ios-label">
+                                Remote Codex chat
                             </div>
-                        ) : null}
-                    </div>
-                ) : null}
+                            <div className="mt-2 text-[0.95rem] leading-6 text-ios-secondary/60">
+                                Select a thread in the left sidebar, or click{" "}
+                                <span className="font-semibold text-ios-label">
+                                    New
+                                </span>{" "}
+                                to start one.
+                            </div>
+                            {!canSend ? (
+                                <div className="mt-4 rounded-[1.25rem] border border-ios-separator/60 bg-ios-surface px-4 py-3 text-ios-secondary/70">
+                                    Status:{" "}
+                                    <span className="font-semibold text-ios-label">
+                                        {connectionState}
+                                    </span>
+                                    . Open Settings in the left sidebar to connect.
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
 
-                {messages.map((m) =>
-                    m.role === "user" ? (
-                        <Question
-                            key={m.id}
-                            content={<MessageContent text={m.text} />}
-                            time={formatTime(m.createdAt)}
-                        />
-                    ) : (
-                        <Answer
-                            key={m.id}
-                            time={formatTime(m.createdAt)}
-                            streaming={Boolean(m.streaming)}
-                            onAbort={abort}
-                        >
-                            <MessageContent text={m.text} />
-                        </Answer>
-                    )
-                )}
-                <div ref={endRef} />
+                    {messages.map((m) =>
+                        m.role === "user" ? (
+                            <Question
+                                key={m.id}
+                                content={<MessageContent text={m.text} />}
+                                time={formatTime(m.createdAt)}
+                            />
+                        ) : (
+                            <Answer
+                                key={m.id}
+                                time={formatTime(m.createdAt)}
+                                streaming={Boolean(m.streaming)}
+                                onAbort={abort}
+                            >
+                                <MessageContent text={m.text} />
+                            </Answer>
+                        )
+                    )}
+                    <div ref={endRef} />
                 </Chat>
                 <Message
                     value={draft}

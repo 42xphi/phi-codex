@@ -51,6 +51,8 @@ type CodexContextValue = {
   activeThreadId: string | null;
   pendingThreadId: string | null;
   activeCwd: string | null;
+  projectCwd: string | null;
+  setProjectCwd: (cwd: string | null) => void;
   threads: ThreadSummary[];
   threadsLoading: boolean;
   refreshThreads: (opts?: { searchTerm?: string; limit?: number }) => void;
@@ -111,6 +113,7 @@ const STORAGE_KEYS = {
   wsUrl: "codex_remote_ws_url",
   token: "codex_remote_token",
   clientId: "codex_remote_client_id",
+  projectCwd: "codex_remote_project_cwd",
 };
 
 function nowIso() {
@@ -190,6 +193,10 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [pendingThreadId, setPendingThreadId] = useState<string | null>(null);
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
+  const [projectCwd, setProjectCwd] = useState<string | null>(() => {
+    const raw = getStored(STORAGE_KEYS.projectCwd).trim();
+    return raw ? raw : null;
+  });
 
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [threadsLoading, setThreadsLoading] = useState(false);
@@ -360,6 +367,7 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
       setPendingThreadId(null);
       setActiveThreadId(msg.threadId);
       setActiveCwd(msg.cwd);
+      setProjectCwd(msg.cwd);
       setModel(msg.model);
       // Codex is now ready; refresh derived panes.
       refreshThreads();
@@ -612,6 +620,10 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    setStored(STORAGE_KEYS.projectCwd, projectCwd ?? "");
+  }, [projectCwd]);
+
   const saveConnectionSettings = useCallback(() => {
     const normalizedUrl = normalizeWsBase(wsUrl);
     const trimmedToken = token.trim();
@@ -640,14 +652,15 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
 
   const startThread = useCallback(
     (opts: { cwd?: string } = {}) => {
+      const cwd = opts.cwd ?? projectCwd ?? activeCwd ?? undefined;
       setPendingThreadId("starting");
-      if (!safeSend({ type: "thread_start", cwd: opts.cwd })) {
+      if (!safeSend({ type: "thread_start", cwd })) {
         setPendingThreadId(null);
         setErrorBanner("Not connected.");
         toastError("Not connected.");
       }
     },
-    [safeSend, toastError],
+    [activeCwd, projectCwd, safeSend, toastError],
   );
 
   const sendUserMessage = useCallback(
@@ -769,6 +782,8 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
       activeThreadId,
       pendingThreadId,
       activeCwd,
+      projectCwd,
+      setProjectCwd,
       threads,
       threadsLoading,
       refreshThreads,
@@ -851,6 +866,7 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
       listDir,
       messages,
       model,
+      projectCwd,
       pendingThreadId,
       readFile,
       refreshGitLog,
@@ -869,6 +885,7 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
       serverClientId,
       sessionId,
       setClientId,
+      setProjectCwd,
       setSearchQuery,
       setToken,
       setWsUrl,

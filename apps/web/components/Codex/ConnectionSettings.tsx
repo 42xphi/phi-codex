@@ -19,24 +19,24 @@ const ConnectionSettings = ({ onClose }: ConnectionSettingsProps) => {
     } = useCodex();
 
     return (
-        <div className="p-12 lg:px-8 md:pt-16 md:px-5 md:pb-8">
+        <div className="p-10 lg:px-8 md:pt-16 md:px-5 md:pb-8 text-ios-label">
             <div className="flex items-start justify-between gap-6">
                 <div>
-                    <div className="h4 text-n-7 dark:text-n-1">
+                    <div className="text-[1.25rem] leading-7 font-semibold">
                         Connection
                     </div>
-                    <div className="mt-2 body2 text-n-4">
+                    <div className="mt-2 text-[0.95rem] leading-6 text-ios-secondary/60">
                         Connect this UI to your Mac-hosted Codex Remote WS
                         server.
                     </div>
-                    <div className="mt-2 caption1 text-n-4/75">
+                    <div className="mt-2 text-[0.75rem] leading-4 text-ios-secondary/60">
                         Tip: when served from your tunnel, WS URL is usually the
                         same origin (e.g. <span className="font-semibold">wss://ios.phi.pe</span>).
                     </div>
                 </div>
                 {onClose ? (
                     <button
-                        className="btn-stroke-light btn-medium"
+                        className="inline-flex h-10 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-4 text-[0.9rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface"
                         onClick={onClose}
                         type="button"
                     >
@@ -47,9 +47,9 @@ const ConnectionSettings = ({ onClose }: ConnectionSettingsProps) => {
 
             <div className="mt-10 space-y-6">
                 <label className="block">
-                    <div className="caption1 text-n-4">WS URL</div>
+                    <div className="text-[0.75rem] leading-4 text-ios-secondary/60">WS URL</div>
                     <input
-                        className="mt-2 w-full h-11 px-4 bg-transparent shadow-[inset_0_0_0_0.0625rem_#DADBDC] rounded-xl outline-none body2 text-n-7 transition-shadow focus:shadow-[inset_0_0_0_0.125rem_#0084FF] placeholder:text-n-4 dark:shadow-[inset_0_0_0_0.0625rem_#2A2E2F] dark:text-n-1 dark:focus:shadow-[inset_0_0_0_0.125rem_#0084FF]"
+                        className="mt-2 w-full h-11 px-4 rounded-xl border border-ios-separator/60 bg-ios-surface2 text-[0.95rem] outline-none transition-shadow placeholder:text-ios-secondary/60 focus:shadow-[0_0_0_0.125rem_rgba(0,122,255,0.35)]"
                         placeholder="wss://ios.phi.pe"
                         value={wsUrl}
                         onChange={(e) => setWsUrl(e.target.value)}
@@ -57,9 +57,9 @@ const ConnectionSettings = ({ onClose }: ConnectionSettingsProps) => {
                 </label>
 
                 <label className="block">
-                    <div className="caption1 text-n-4">Token</div>
+                    <div className="text-[0.75rem] leading-4 text-ios-secondary/60">Token</div>
                     <input
-                        className="mt-2 w-full h-11 px-4 bg-transparent shadow-[inset_0_0_0_0.0625rem_#DADBDC] rounded-xl outline-none body2 text-n-7 transition-shadow focus:shadow-[inset_0_0_0_0.125rem_#0084FF] placeholder:text-n-4 dark:shadow-[inset_0_0_0_0.0625rem_#2A2E2F] dark:text-n-1 dark:focus:shadow-[inset_0_0_0_0.125rem_#0084FF]"
+                        className="mt-2 w-full h-11 px-4 rounded-xl border border-ios-separator/60 bg-ios-surface2 text-[0.95rem] outline-none transition-shadow placeholder:text-ios-secondary/60 focus:shadow-[0_0_0_0.125rem_rgba(0,122,255,0.35)]"
                         placeholder="CODEX_REMOTE_TOKEN"
                         type="password"
                         value={token}
@@ -68,43 +68,43 @@ const ConnectionSettings = ({ onClose }: ConnectionSettingsProps) => {
                 </label>
 
                 <label className="block">
-                    <div className="caption1 text-n-4">Client ID</div>
+                    <div className="text-[0.75rem] leading-4 text-ios-secondary/60">Client ID</div>
                     <input
-                        className="mt-2 w-full h-11 px-4 bg-transparent shadow-[inset_0_0_0_0.0625rem_#DADBDC] rounded-xl outline-none body2 text-n-7 transition-shadow focus:shadow-[inset_0_0_0_0.125rem_#0084FF] placeholder:text-n-4 dark:shadow-[inset_0_0_0_0.0625rem_#2A2E2F] dark:text-n-1 dark:focus:shadow-[inset_0_0_0_0.125rem_#0084FF]"
+                        className="mt-2 w-full h-11 px-4 rounded-xl border border-ios-separator/60 bg-ios-surface2 text-[0.95rem] outline-none transition-shadow placeholder:text-ios-secondary/60 focus:shadow-[0_0_0_0.125rem_rgba(0,122,255,0.35)]"
                         placeholder="same on every device to sync"
                         value={clientId}
                         onChange={(e) => setClientId(e.target.value)}
                     />
-                    <div className="mt-2 caption1 text-n-4/75">
+                    <div className="mt-2 text-[0.75rem] leading-4 text-ios-secondary/60">
                         Use the same Client ID on multiple devices if you want
                         them to share the same “last active” Codex thread.
                     </div>
                 </label>
 
                 {errorBanner ? (
-                    <div className="p-4 rounded-xl border border-accent-1/50 bg-accent-1/10 text-accent-1">
+                    <div className="p-4 rounded-xl border border-ios-red/30 bg-ios-red/10 text-ios-red break-words">
                         {errorBanner}
                     </div>
                 ) : null}
 
                 <div className="flex flex-wrap gap-3 items-center">
                     <button
-                        className="btn-blue btn-large"
+                        className="inline-flex h-12 items-center justify-center rounded-xl bg-ios-blue px-5 text-[0.9rem] font-semibold text-white shadow-[0_0.75rem_2rem_-1.5rem_rgba(0,0,0,0.35)] transition-opacity hover:opacity-90"
                         onClick={saveConnectionSettings}
                         type="button"
                     >
                         Save &amp; connect
                     </button>
                     <button
-                        className="btn-stroke-light btn-large"
+                        className="inline-flex h-12 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-5 text-[0.9rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface"
                         onClick={disconnect}
                         type="button"
                     >
                         Disconnect
                     </button>
-                    <div className="ml-auto caption1 text-n-4/75">
+                    <div className="ml-auto text-[0.75rem] leading-4 text-ios-secondary/60">
                         Status:{" "}
-                        <span className="font-semibold text-n-7 dark:text-n-1">
+                        <span className="font-semibold text-ios-label">
                             {connectionState}
                         </span>
                     </div>
@@ -115,4 +115,3 @@ const ConnectionSettings = ({ onClose }: ConnectionSettingsProps) => {
 };
 
 export default ConnectionSettings;
-

@@ -1,12 +1,10 @@
 import { useState, useEffect } from "react";
 import { disablePageScroll, enablePageScroll } from "scroll-lock";
-import Logo from "@/components/Logo";
 import Icon from "@/components/Icon";
 import Modal from "@/components/Modal";
 import ConnectionSettings from "@/components/Codex/ConnectionSettings";
 import Navigation from "./Navigation";
 import ChatList from "./ChatList";
-import Profile from "./Profile";
 import ToggleTheme from "./ToggleTheme";
 
 import { useCodex } from "@/lib/codex";
@@ -26,7 +24,7 @@ const LeftSidebar = ({
     onRequestClose,
 }: LeftSidebarProps) => {
     const [visibleSettings, setVisibleSettings] = useState<boolean>(false);
-    const { startThread, activeCwd } = useCodex();
+    const { startThread } = useCodex();
 
     useEffect(() => {
         return () => {};
@@ -36,19 +34,19 @@ const LeftSidebar = ({
         {
             title: "New chat",
             icon: "plus-circle",
-            color: "fill-primary-2",
-            onClick: () => startThread({ cwd: activeCwd ?? undefined }),
+            color: "fill-current text-ios-blue",
+            onClick: () => startThread(),
         },
         {
             title: "Reconnect",
             icon: "arrow-up",
-            color: "fill-accent-2",
+            color: "fill-current text-ios-secondary/70",
             onClick: () => setVisibleSettings(true),
         },
         {
             title: "Settings",
             icon: "settings",
-            color: "fill-accent-3",
+            color: "fill-current text-ios-secondary/70",
             onClick: () => setVisibleSettings(true),
         },
     ];
@@ -62,7 +60,7 @@ const LeftSidebar = ({
         <>
             <div
                 className={twMerge(
-                    `fixed z-20 top-0 left-0 bottom-0 flex flex-col pt-30 px-4 bg-n-7 ${
+                    `fixed z-20 top-0 left-0 bottom-0 flex flex-col pt-16 px-4 bg-ios-surface border-r border-ios-separator/60 ${
                         value
                             ? "w-24 pb-38 md:w-16 md:px-0 md:pb-30"
                             : "w-80 pb-58"
@@ -70,34 +68,38 @@ const LeftSidebar = ({
                 )}
             >
                 <div
-                    className={`absolute top-0 right-0 left-0 flex items-center h-30 pl-7 pr-6 ${
+                    className={`absolute top-0 right-0 left-0 flex items-center h-16 pl-6 pr-6 border-b border-ios-separator/60 ${
                         value ? "justify-center md:px-4" : "justify-between"
                     }`}
                 >
-                    {!value && <Logo />}
+                    {!value ? (
+                        <div className="text-[0.95rem] font-semibold text-ios-label">
+                            Codex
+                        </div>
+                    ) : null}
                     <button
                         className="group tap-highlight-color"
                         onClick={handleClick}
                     >
                         <Icon
-                            className="fill-n-4 transition-colors group-hover:fill-n-3"
+                            className="fill-current text-ios-secondary/70 transition-colors group-hover:text-ios-label"
                             name={value ? "toggle-on" : "toggle-off"}
                         />
                     </button>
                     {onRequestClose ? (
                         <button
-                            className="absolute top-6 right-6 flex justify-center items-center w-10 h-10 border-2 border-n-4/25 rounded-full text-0 transition-colors hover:border-transparent hover:bg-n-4/25"
+                            className="absolute top-3 right-3 flex justify-center items-center w-10 h-10 border border-ios-separator/60 rounded-full text-0 transition-colors hover:bg-ios-surface2"
                             onClick={onRequestClose}
                             type="button"
                         >
-                            <Icon className="fill-n-4" name="close" />
+                            <Icon className="fill-current text-ios-secondary/70" name="close" />
                         </button>
                     ) : null}
                 </div>
                 <div className="grow overflow-y-auto scroll-smooth scrollbar-none">
                     <Navigation visible={value} items={navigation} />
                     <div
-                        className={`my-4 h-0.25 bg-n-6 ${
+                        className={`my-4 h-px bg-ios-separator/60 ${
                             value ? "-mx-4 md:mx-0" : "-mx-2 md:mx-0"
                         }`}
                     ></div>
@@ -107,8 +109,12 @@ const LeftSidebar = ({
                         onCloseSidebar={onRequestClose}
                     />
                 </div>
-                <div className="absolute left-0 bottom-0 right-0 pb-6 px-4 bg-n-7 before:absolute before:left-0 before:right-0 before:bottom-full before:h-10 before:bg-gradient-to-t before:from-[#131617] before:to-[rgba(19,22,23,0)] before:pointer-events-none md:px-3">
-                    <Profile visible={value} />
+                <div
+                    className="absolute left-0 bottom-0 right-0 pb-6 px-4 bg-ios-surface border-t border-ios-separator/60 md:px-3"
+                    style={{
+                        paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)",
+                    }}
+                >
                     <ToggleTheme visible={value} />
                 </div>
             </div>

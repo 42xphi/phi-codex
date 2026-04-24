@@ -2,12 +2,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Updates from 'expo-updates';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Markdown from 'react-native-markdown-display';
 import {
   ActionSheetIOS,
   ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   NativeModules,
   Platform,
@@ -254,6 +256,155 @@ function basenameFromPath(rawPath: string | null | undefined) {
   const trimmed = value.replace(/\/+$/, '');
   const parts = trimmed.split('/').filter(Boolean);
   return parts.length ? parts[parts.length - 1] : trimmed;
+}
+
+const MONO_FONT_FAMILY = Platform.select({
+  ios: 'Menlo',
+  android: 'monospace',
+  default: 'monospace',
+});
+
+const MARKDOWN_STYLES = {
+  body: {
+    padding: 0,
+    margin: 0,
+  },
+  text: {
+    color: '#f9fafb',
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 8,
+  },
+  heading1: {
+    flexDirection: 'row',
+    fontSize: 17,
+    fontWeight: '800',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  heading2: {
+    flexDirection: 'row',
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  heading3: {
+    flexDirection: 'row',
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  heading4: {
+    flexDirection: 'row',
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  heading5: {
+    flexDirection: 'row',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  heading6: {
+    flexDirection: 'row',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  bullet_list: {
+    marginVertical: 6,
+  },
+  ordered_list: {
+    marginVertical: 6,
+  },
+  list_item: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginVertical: 2,
+  },
+  bullet_list_icon: {
+    marginLeft: 6,
+    marginRight: 8,
+  },
+  bullet_list_content: {
+    flex: 1,
+  },
+  ordered_list_icon: {
+    marginLeft: 6,
+    marginRight: 8,
+  },
+  ordered_list_content: {
+    flex: 1,
+  },
+  blockquote: {
+    backgroundColor: 'transparent',
+    borderColor: '#273244',
+    borderLeftWidth: 2,
+    paddingLeft: 12,
+    marginVertical: 8,
+    opacity: 0.9,
+  },
+  link: {
+    color: '#93c5fd',
+    textDecorationLine: 'underline',
+  },
+  hr: {
+    backgroundColor: '#273244',
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 10,
+  },
+  code_inline: {
+    fontFamily: MONO_FONT_FAMILY,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderWidth: 0,
+    borderColor: 'transparent',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  table: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginVertical: 8,
+  },
+  tr: {
+    flexDirection: 'row',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+  },
+  th: {
+    flex: 1,
+    padding: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  td: {
+    flex: 1,
+    padding: 6,
+  },
+} as const;
+
+function isSafeMarkdownUrl(rawUrl: string) {
+  const value = (rawUrl ?? '').trim();
+  if (!value) return false;
+
+  try {
+    const parsed = new URL(value);
+    const protocol = parsed.protocol.toLowerCase();
+    return protocol === 'http:' || protocol === 'https:' || protocol === 'mailto:' || protocol === 'tel:';
+  } catch {
+    return false;
+  }
 }
 
 type MessageBlock =
@@ -2128,13 +2279,26 @@ export default function App() {
                         </Text>
                       </View>
                     ) : (
-                      <Text
+                      <View
                         key={`${item.id}:text:${idx}`}
-                        style={[styles.bubbleText, idx > 0 ? styles.messageBlockSpacing : null]}
-                        selectable
+                        style={idx > 0 ? styles.messageBlockSpacing : null}
                       >
-                        {block.text}
-                      </Text>
+                        <Markdown
+                          style={MARKDOWN_STYLES as any}
+                          onLinkPress={(url) => {
+                            if (!url) return false;
+                            if (!isSafeMarkdownUrl(url)) return false;
+                            Linking.openURL(url).catch(() => {});
+                            return false;
+                          }}
+                          {...({
+                            allowedImageHandlers: [],
+                            defaultImageHandler: null,
+                          } as any)}
+                        >
+                          {block.text}
+                        </Markdown>
+                      </View>
                     ),
                   )}
 

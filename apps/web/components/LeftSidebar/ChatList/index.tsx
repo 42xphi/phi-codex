@@ -29,6 +29,8 @@ const ChatList = ({ visible, onOpenSettings, onCloseSidebar }: ChatListProps) =>
         activeThreadId,
         pendingThreadId,
         activeCwd,
+        projectCwd,
+        setProjectCwd,
         refreshThreads,
         selectThread,
         startThread,
@@ -81,26 +83,41 @@ const ChatList = ({ visible, onOpenSettings, onCloseSidebar }: ChatListProps) =>
         return withSort;
     }, [threads]);
 
-    function toggleProject(cwd: string) {
-        setCollapsed((prev) => ({ ...prev, [cwd]: !prev[cwd] }));
+    const selectedCwd = projectCwd ?? activeCwd;
+
+    function handleProjectClick(cwd: string) {
+        setProjectCwd(cwd);
+        setCollapsed((prev) => {
+            const isSame = selectedCwd === cwd;
+            const nextCollapsed = isSame ? !Boolean(prev[cwd]) : false;
+            return { ...prev, [cwd]: nextCollapsed };
+        });
     }
 
     return (
         <>
             <div className="mb-auto pb-6">
                 <div
-                    className={`flex items-center w-full h-12 text-left base2 text-n-4/75 ${
-                        visible ? "justify-center px-3" : "px-5"
-                    }`}
+                    className={twMerge(
+                        "flex items-center w-full h-12 text-left text-ios-secondary/70",
+                        visible ? "justify-center px-3" : "px-4"
+                    )}
                 >
                     <div className="flex items-center">
-                        <Icon className="fill-n-4" name="container" />
-                        {!visible && <div className="ml-5">Projects</div>}
+                        <Icon
+                            className="fill-current text-ios-secondary/70"
+                            name="container"
+                        />
+                        {!visible && (
+                            <div className="ml-3 text-[0.85rem] font-semibold">
+                                Projects
+                            </div>
+                        )}
                     </div>
                     {!visible ? (
                         <div className="ml-auto flex items-center gap-2">
                             <button
-                                className="btn-stroke-light btn-medium h-9 px-3"
+                                className="inline-flex h-9 items-center justify-center rounded-xl border border-ios-separator/60 bg-ios-surface2 px-3 text-[0.85rem] font-semibold text-ios-label transition-colors hover:bg-ios-surface"
                                 type="button"
                                 onClick={() =>
                                     refreshThreads({
@@ -111,16 +128,14 @@ const ChatList = ({ visible, onOpenSettings, onCloseSidebar }: ChatListProps) =>
                                 {threadsLoading ? "…" : "Refresh"}
                             </button>
                             <button
-                                className="btn-blue btn-medium h-9 px-3"
+                                className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-ios-blue px-3 text-[0.85rem] font-semibold text-white shadow-[0_0.5rem_1.5rem_-1rem_rgba(0,0,0,0.35)] transition-opacity hover:opacity-90"
                                 type="button"
                                 onClick={() => {
-                                    startThread({
-                                        cwd: activeCwd ?? undefined,
-                                    });
+                                    startThread();
                                     onCloseSidebar?.();
                                 }}
                             >
-                                <Icon name="plus" />
+                                <Icon className="w-5 h-5 fill-current" name="plus" />
                                 <span>New</span>
                             </button>
                         </div>
@@ -128,9 +143,9 @@ const ChatList = ({ visible, onOpenSettings, onCloseSidebar }: ChatListProps) =>
                 </div>
 
                 {!visible ? (
-                    <div className="px-5 pb-3">
+                    <div className="px-4 pb-3">
                         <input
-                            className="w-full h-10 px-4 bg-transparent shadow-[inset_0_0_0_0.0625rem_#2A2E2F] rounded-xl outline-none caption1 text-n-1 transition-shadow focus:shadow-[inset_0_0_0_0.125rem_#0084FF] placeholder:text-n-4"
+                            className="w-full h-10 px-4 rounded-xl border border-ios-separator/60 bg-ios-surface2 text-[0.9rem] text-ios-label outline-none transition-shadow placeholder:text-ios-secondary/60 focus:shadow-[0_0_0_0.125rem_rgba(0,122,255,0.35)]"
                             type="text"
                             value={search}
                             placeholder="Search threads…"
@@ -148,24 +163,24 @@ const ChatList = ({ visible, onOpenSettings, onCloseSidebar }: ChatListProps) =>
                 ) : null}
 
                 {errorBanner && connectionState === "connected" && !visible ? (
-                    <div className="px-5 pb-3">
-                        <div className="p-3 rounded-xl border border-accent-1/50 bg-accent-1/10 text-accent-1 break-words">
+                    <div className="px-4 pb-3">
+                        <div className="p-3 rounded-xl border border-ios-red/30 bg-ios-red/10 text-ios-red break-words">
                             {errorBanner}
                         </div>
                     </div>
                 ) : null}
 
                 {connectionState !== "connected" ? (
-                    <div className={`${visible ? "px-3" : "px-5"} pb-4`}>
+                    <div className={`${visible ? "px-3" : "px-4"} pb-4`}>
                         {!visible ? (
                             <>
-                                <div className="mt-2 caption1 text-n-4/75">
+                                <div className="mt-2 text-[0.8rem] leading-5 text-ios-secondary/60">
                                     {errorBanner
                                         ? errorBanner
                                         : "Not connected."}
                                 </div>
                                 <button
-                                    className="btn-blue btn-medium mt-4"
+                                    className="mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-ios-blue px-4 text-[0.9rem] font-semibold text-white shadow-[0_0.5rem_1.5rem_-1rem_rgba(0,0,0,0.35)] transition-opacity hover:opacity-90"
                                     type="button"
                                     onClick={onOpenSettings}
                                 >
@@ -182,34 +197,35 @@ const ChatList = ({ visible, onOpenSettings, onCloseSidebar }: ChatListProps) =>
                                 basenameFromPath(group.cwd) ||
                                 group.cwd ||
                                 "(unknown)";
+                            const isSelected = selectedCwd === group.cwd;
                             return (
                                 <div key={group.cwd}>
                                     <button
                                         className={twMerge(
-                                            `group flex items-center w-full h-11 rounded-lg text-n-3/75 base2 font-semibold transition-colors hover:text-n-1 ${
-                                                visible ? "px-3" : "px-5"
+                                            `group flex items-center w-full h-11 rounded-xl transition-colors ${
+                                                visible ? "px-3 justify-center" : "px-4"
                                             } ${
-                                                activeCwd === group.cwd &&
-                                                !isCollapsed &&
-                                                "text-n-1 bg-gradient-to-l from-[#323337] to-[rgba(70,79,111,0.25)]"
+                                                isSelected
+                                                    ? "bg-ios-surface2 text-ios-label"
+                                                    : "text-ios-secondary/80 hover:bg-ios-surface2 hover:text-ios-label"
                                             }`
                                         )}
-                                        onClick={() => toggleProject(group.cwd)}
+                                        onClick={() => handleProjectClick(group.cwd)}
                                         type="button"
                                     >
                                         <Icon
                                             className={twMerge(
-                                                "fill-n-4 transition-transform",
+                                                "fill-current text-ios-secondary/70 transition-transform",
                                                 isCollapsed ? "-rotate-90" : ""
                                             )}
                                             name="arrow-down"
                                         />
                                         {!visible ? (
                                             <>
-                                                <div className="ml-5 truncate">
+                                                <div className="ml-3 min-w-0 flex-1 truncate text-[0.9rem] font-semibold">
                                                     {label}
                                                 </div>
-                                                <div className="ml-auto px-2 bg-n-6 rounded-lg base2 font-semibold text-n-4">
+                                                <div className="ml-auto shrink-0 rounded-lg bg-ios-surface px-2 text-[0.8rem] font-semibold text-ios-secondary/70">
                                                     {group.threads.length}
                                                 </div>
                                             </>
@@ -224,18 +240,19 @@ const ChatList = ({ visible, onOpenSettings, onCloseSidebar }: ChatListProps) =>
                                         leaveFrom="transform scale-100 opacity-100"
                                         leaveTo="transform scale-95 opacity-0"
                                     >
-                                        <div className={`${visible ? "px-2" : "px-5"} mt-1 space-y-1`}>
+                                        <div className={`${visible ? "px-2" : "px-4"} mt-1 space-y-1`}>
                                             {group.threads.slice(0, 30).map((t) => {
                                                 const isPending = pendingThreadId === t.id;
                                                 return (
                                                     <button
                                                         key={t.id}
                                                         className={twMerge(
-                                                            `group flex items-center w-full h-10 rounded-lg text-n-3/75 base2 font-semibold transition-colors hover:text-n-1 disabled:opacity-60 disabled:cursor-not-allowed ${
-                                                                visible ? "px-3" : "px-4"
+                                                            `group flex items-center w-full h-10 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                                                                visible ? "px-3 justify-center" : "px-4"
                                                             } ${
-                                                                activeThreadId === t.id &&
-                                                                "text-n-1 bg-gradient-to-l from-[#323337] to-[rgba(80,62,110,0.29)]"
+                                                                activeThreadId === t.id
+                                                                    ? "bg-ios-surface2 text-ios-label"
+                                                                    : "text-ios-secondary/80 hover:bg-ios-surface2 hover:text-ios-label"
                                                             }`
                                                         )}
                                                         onClick={() => {
@@ -246,18 +263,18 @@ const ChatList = ({ visible, onOpenSettings, onCloseSidebar }: ChatListProps) =>
                                                         disabled={Boolean(pendingThreadId)}
                                                     >
                                                         <Icon
-                                                            className="fill-n-4 transition-colors group-hover:fill-primary-1"
+                                                            className="fill-current text-ios-secondary/70 transition-colors group-hover:text-ios-blue"
                                                             name="chat"
                                                         />
                                                         {!visible ? (
                                                             <>
-                                                                <div className="ml-4 min-w-0 flex-1 truncate">
+                                                                <div className="ml-3 min-w-0 flex-1 truncate text-[0.9rem] font-semibold">
                                                                     {t.name ||
                                                                         t.preview ||
                                                                         t.id}
                                                                 </div>
                                                                 {isPending ? (
-                                                                    <div className="ml-3 caption1 text-n-4/75">
+                                                                    <div className="ml-3 text-[0.75rem] text-ios-secondary/60">
                                                                         Switching…
                                                                     </div>
                                                                 ) : null}
@@ -272,7 +289,7 @@ const ChatList = ({ visible, onOpenSettings, onCloseSidebar }: ChatListProps) =>
                             );
                         })}
                         {groups.length === 0 && !threadsLoading ? (
-                            <div className={`${visible ? "px-3" : "px-5"} caption1 text-n-4/75`}>
+                            <div className={`${visible ? "px-3" : "px-4"} text-[0.8rem] leading-5 text-ios-secondary/60`}>
                                 No threads yet. Click <span className="font-semibold">New</span> to start one.
                             </div>
                         ) : null}

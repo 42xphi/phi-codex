@@ -57,7 +57,7 @@ const Layout = ({
                 <title>Codex Remote</title>
             </Head>
             <div
-                className={`pr-6 bg-n-7 md:p-0 md:bg-n-1 dark:md:bg-n-6 md:overflow-hidden ${
+                className={`bg-ios-bg text-ios-label pr-6 md:pr-0 md:overflow-hidden ${
                     visibleSidebar
                         ? "pl-24 md:pl-0"
                         : smallSidebar
@@ -81,7 +81,7 @@ const Layout = ({
                     }`}
                 >
                     <div
-                        className={`relative flex grow max-w-full bg-n-1 rounded-[1.25rem] md:rounded-none dark:bg-n-6 ${
+                        className={`relative flex grow max-w-full bg-ios-surface rounded-[1.25rem] border border-ios-separator/60 shadow-[0_0.75rem_2rem_-1.25rem_rgba(0,0,0,0.35)] md:rounded-none md:border-0 md:shadow-none ${
                             !hideRightSidebar &&
                             "pr-[22.5rem] 2xl:pr-80 lg:pr-0"
                         }`}
@@ -103,34 +103,33 @@ const Layout = ({
                             )}
                             {isPhone ? (
                                 <button
-                                    className="relative z-[25] shrink-0 flex items-center justify-center w-8 h-8 my-5 mr-auto ml-6 tap-highlight-color md:absolute md:top-5 md:left-4 md:m-0"
+                                    className="relative z-[25] shrink-0 inline-flex items-center justify-center w-11 h-11 rounded-full border border-ios-separator/60 bg-ios-surface/80 backdrop-blur supports-[backdrop-filter]:bg-ios-surface/60 shadow-[0_0.75rem_2rem_-1.5rem_rgba(0,0,0,0.35)] tap-highlight-color md:absolute md:m-0"
                                     onClick={() => setLeftDrawerOpen(!leftDrawerOpen)}
                                     type="button"
+                                    aria-label={leftDrawerOpen ? "Close threads" : "Open threads"}
+                                    style={{
+                                        top: "calc(env(safe-area-inset-top) + 0.75rem)",
+                                        left: "calc(env(safe-area-inset-left) + 0.75rem)",
+                                    }}
                                 >
                                     <Icon
-                                        className="fill-n-4 transition-colors hover:fill-primary-1"
+                                        className="fill-current text-ios-secondary/70 transition-colors hover:text-ios-blue"
                                         name={leftDrawerOpen ? "close" : "container"}
                                     />
                                 </button>
                             ) : null}
                             {hideRightSidebar && smallSidebar && (
                                 <Link
-                                    className="absolute top-6 right-6 flex justify-center items-center w-10 h-10 border-2 border-n-4/25 rounded-full text-0 transition-colors hover:border-transparent hover:bg-n-4/25"
+                                    className="absolute top-6 right-6 flex justify-center items-center w-10 h-10 border border-ios-separator/60 rounded-full text-0 transition-colors hover:bg-ios-surface2"
                                     href={backUrl || "/"}
                                 >
-                                    <Icon className="fill-n-4" name="close" />
+                                    <Icon className="fill-current text-ios-secondary/70" name="close" />
                                 </Link>
                             )}
                             {children}
                         </div>
                         {!hideRightSidebar && (
                             <RightSidebar
-                                className={`
-                                ${
-                                    !visibleSidebar &&
-                                    "md:translate-x-64 md:before:absolute md:before:z-30 md:before:inset-0"
-                                }
-                            `}
                                 visible={visibleRightSidebar}
                             />
                         )}
@@ -138,7 +137,7 @@ const Layout = ({
                 </div>
                 <div
                     className={twMerge(
-                        `fixed inset-0 z-10 bg-n-7/80 transition-opacity ${
+                        `fixed inset-0 z-10 bg-black/40 transition-opacity ${
                             leftDrawerOpen || visibleRightSidebar
                                 ? "visible opacity-100"
                                 : "invisible opacity-0 pointer-events-none"
