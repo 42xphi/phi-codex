@@ -7,6 +7,7 @@ import Question from "@/components/Question";
 import Answer from "@/components/Answer";
 import Message from "@/components/Message";
 import MessageContent from "@/components/Codex/MessageContent";
+import Approvals from "@/components/Codex/Approvals";
 import { useCodex } from "@/lib/codex";
 
 function formatTime(iso: string) {
@@ -70,8 +71,9 @@ const CodexChatPage = () => {
     }, [messages.length]);
 
     return (
-        <Layout>
-            <Chat title={title}>
+        <>
+            <Layout>
+                <Chat title={title}>
                 {connectionState === "connected" && !activeThreadId ? (
                     <div className="mb-4 p-4 rounded-xl border border-n-3 text-n-4 dark:border-n-5">
                         Starting Codex…
@@ -124,21 +126,23 @@ const CodexChatPage = () => {
                     )
                 )}
                 <div ref={endRef} />
-            </Chat>
-            <Message
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onSend={handleSend}
-                disabled={!canSend}
-                placeholder={
-                    canSend
-                        ? "Message Codex…"
-                        : connectionState === "connected"
-                          ? "Starting Codex…"
-                          : "Connect to start chatting…"
-                }
-            />
-        </Layout>
+                </Chat>
+                <Message
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onSend={handleSend}
+                    disabled={!canSend}
+                    placeholder={
+                        canSend
+                            ? "Message Codex…"
+                            : connectionState === "connected"
+                              ? "Starting Codex…"
+                              : "Connect to start chatting…"
+                    }
+                />
+            </Layout>
+            <Approvals />
+        </>
     );
 };
 
