@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import type {
   ApprovalDecision,
   ClientMessage,
@@ -569,12 +569,6 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
       toastError("Missing WS URL.");
       return;
     }
-    if (!token.trim()) {
-      setConnectionState("error");
-      setErrorBanner("Missing token.");
-      toastError("Missing token.");
-      return;
-    }
 
     shouldReconnectRef.current = true;
     cleanupSocket();
@@ -653,7 +647,10 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = buildWsUrl(wsUrl, token, clientId);
-    if (!url || !token.trim()) return;
+    if (!url) return;
+    // Auto-connect only when a token is set. This prevents noisy reconnect loops
+    // when the server requires CODEX_REMOTE_TOKEN but the client isn't configured yet.
+    if (!token.trim()) return;
     connect();
     return () => disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps

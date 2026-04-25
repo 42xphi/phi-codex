@@ -1,6 +1,6 @@
-# Codex Remote Chat (Expo + WS + Cloudflare/Tailscale)
+# phi-codex (Expo + WebSocket + Cloudflare/Tailscale)
 
-ChatGPT-style mobile UI (Expo) that talks to a Mac-hosted WebSocket server, which proxies requests to your local Codex.app (`codex app-server`) so you can chat with Codex from your phone (with full thread history + workspace browsing).
+Chat UI (Expo + Web) that talks to a Mac-hosted WebSocket server, which proxies requests to your local Codex.app (`codex app-server`) so you can chat with Codex from your phone (with full thread history + workspace browsing).
 
 ## 1) Backend (Mac)
 
@@ -9,7 +9,7 @@ From the repo root:
 ```bash
 cd server
 cp .env.example .env
-# edit .env (CODEX_REMOTE_TOKEN, etc.)
+# edit .env (optionally set CODEX_REMOTE_TOKEN, etc.)
 npm install
 npm run dev
 ```
@@ -39,23 +39,23 @@ Optional: expose/lock down via Tailscale ACLs or `tailscale serve`.
 
 ### Cloudflare Tunnel (recommended)
 
-Expose the server over `wss://` so the phone works from any Wi‑Fi/LTE. This repo is typically configured to use `wss://ios.phi.pe`.
+Expose the server over `wss://` so the phone works from any Wi‑Fi/LTE (e.g. `wss://your-codex.example`).
 
 ## 2) Mobile app (phone)
 
 ```bash
 cd apps/mobile
 cp .env.example .env
-# set EXPO_PUBLIC_WS_URL and EXPO_PUBLIC_CODEX_TOKEN
+# set EXPO_PUBLIC_WS_URL and (optionally) EXPO_PUBLIC_CODEX_TOKEN
 npm install
 npm run start
 ```
 
 Open in Expo Go (or a dev build) and send a message — responses stream in.
 
-## 3) Web UI (Brainwave-based)
+## 3) Web UI (shadcn-style, HeroUI-inspired tokens)
 
-This repo also includes a desktop-friendly web UI at `apps/web` (Brainwave template), wired to the same WebSocket backend (threads + files + git + streaming chat).
+This repo also includes a desktop-friendly web UI at `apps/web`, wired to the same WebSocket backend (threads + files + git + streaming chat).
 
 ### Dev
 
@@ -65,10 +65,7 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:3000` and use **Settings** (left sidebar) to set:
-- WS URL (e.g. `ws://127.0.0.1:8787` or `wss://ios.phi.pe`)
-- Token (`CODEX_REMOTE_TOKEN`)
-- Client ID (same across devices to sync)
+Then open `http://localhost:3000`. Connection settings are in **Settings**.
 
 ### Serve from the backend (recommended for Cloudflare Tunnel)
 
@@ -79,7 +76,7 @@ cd apps/web
 npm run build  # outputs ./out
 ```
 
-Then restart the backend; `https://ios.phi.pe` will serve the web UI if the folder exists.
+Then restart the backend; your tunnel domain will serve the web UI if the folder exists.
 
 ## Notes
 

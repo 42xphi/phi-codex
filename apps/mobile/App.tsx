@@ -218,7 +218,7 @@ function defaultWsUrl(): string {
   const envList = parseWsUrlList(process.env.EXPO_PUBLIC_WS_URLS);
   if (envList.length > 0) return envList[0];
   if (Platform.OS === 'web') return 'ws://localhost:8787';
-  return guessWsUrlFromBundle() ?? 'wss://ios.phi.pe';
+  return guessWsUrlFromBundle() ?? '';
 }
 
 function withQueryParam(wsUrl: string, key: string, value: string) {
@@ -2858,7 +2858,7 @@ export default function App() {
               autoCapitalize="none"
               autoCorrect={false}
               style={styles.modalInput}
-              placeholder="wss://ios.phi.pe"
+              placeholder="wss://your-codex.example"
               placeholderTextColor="#6b7280"
             />
 
@@ -2916,7 +2916,7 @@ export default function App() {
 	            </View>
 
 	            <Text style={styles.hint}>
-	              Tip: use the Cloudflare URL (wss://ios.phi.pe) from anywhere, or your Mac’s Tailscale
+	              Tip: use your Cloudflare URL (wss://your-codex.example) from anywhere, or your Mac’s Tailscale
 	              IP (ws://100.x.y.z:8787) when you’re on your tailnet. If your server set
 	              CODEX_REMOTE_TOKEN, the token must match. Use the same Client ID on every device to
               sync the “last active” Codex thread + history.

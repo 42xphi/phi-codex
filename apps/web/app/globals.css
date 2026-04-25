@@ -3,176 +3,114 @@
 @tailwind utilities;
 
 @layer base {
-    :root {
-        /* iOS system colors (light) */
-        --ios-bg: 242 242 247; /* systemGroupedBackground */
-        --ios-surface: 255 255 255; /* systemBackground */
-        --ios-surface-2: 242 242 247; /* secondarySystemBackground */
-        --ios-separator: 209 209 214; /* separator */
+  :root {
+    /* HeroUI-inspired neutrals (light): bg=#f4f4f5, surface=#ffffff, dark=#111111 */
+    --background: 240 6% 96%;
+    --foreground: 240 10% 4%;
 
-        --ios-label: 0 0 0; /* label */
-        --ios-secondary-label: 60 60 67; /* secondaryLabel (use /0.6 alpha) */
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
 
-        --ios-blue: 0 122 255; /* systemBlue */
-        --ios-green: 52 199 89; /* systemGreen */
-        --ios-red: 255 59 48; /* systemRed */
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 4%;
 
-        --ios-bubble-assistant: 229 229 234; /* systemGray5 */
-    }
+    /* HeroUI-ish primary blue (#3080ff => hsl(217 100% 59%)) */
+    --primary: 217 100% 59%;
+    --primary-foreground: 0 0% 100%;
 
-    .dark,
-    [data-theme="dark"] {
-        /* iOS system colors (dark) */
-        --ios-bg: 0 0 0; /* systemGroupedBackground */
-        --ios-surface: 28 28 30; /* secondarySystemBackground */
-        --ios-surface-2: 44 44 46; /* tertiarySystemBackground */
-        --ios-separator: 56 56 58; /* separator */
+    --secondary: 240 5% 92%;
+    --secondary-foreground: 240 6% 12%;
 
-        --ios-label: 255 255 255;
-        --ios-secondary-label: 235 235 245;
+    --muted: 240 5% 92%;
+    --muted-foreground: 240 4% 46%;
 
-        --ios-blue: 10 132 255; /* systemBlue (dark) */
-        --ios-green: 48 209 88;
-        --ios-red: 255 69 58;
+    --accent: 240 5% 92%;
+    --accent-foreground: 240 6% 12%;
 
-        --ios-bubble-assistant: 44 44 46;
-    }
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
 
-    html,
-    body {
-        height: 100%;
-    }
+    --border: 240 6% 88%;
+    --input: 240 6% 88%;
+    --ring: 217 100% 59%;
+
+    --radius: 0.85rem;
+  }
+
+  .dark {
+    --background: 0 0% 7%;
+    --foreground: 0 0% 98%;
+
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 217 100% 63%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 74% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 217 100% 63%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
 }
 
 @layer components {
-    .react-datepicker {
-        @apply !border-n-3 !rounded-lg !font-inter shadow-[0_0_1rem_0.25rem_rgba(0,0,0,0.04),0_2rem_2rem_-1rem_rgba(0,0,0,0.1)] overflow-hidden dark:bg-n-7 dark:!border-n-5;
-    }
-    .react-datepicker .react-datepicker__header {
-        @apply bg-transparent border-none;
-    }
-    .react-datepicker .react-datepicker__current-month {
-        @apply base2 font-semibold text-n-4/75;
-    }
-    .react-datepicker .react-datepicker__navigation {
-        @apply top-1.5;
-    }
-    .react-datepicker .react-datepicker__navigation-icon::before {
-        @apply transition-colors dark:border-n-4;
-    }
-    .react-datepicker
-        .react-datepicker__navigation:hover
-        .react-datepicker__navigation-icon::before {
-        @apply dark:border-n-3;
-    }
-    .react-datepicker .react-datepicker__triangle {
-        @apply hidden;
-    }
-    .react-datepicker .react-datepicker__day-name {
-        @apply pt-2 caption2 font-semibold text-n-5;
-    }
-    .react-datepicker .react-datepicker__day {
-        @apply py-[0.22rem] rounded caption1 transition-colors dark:text-n-1 dark:hover:text-n-7;
-    }
-    .react-datepicker .react-datepicker__day.past {
-        @apply text-n-4/50 pointer-events-none;
-    }
-    .react-datepicker .react-datepicker__day--today {
-        @apply bg-n-3 text-n-1;
-    }
-    .react-datepicker .react-datepicker__day--today.past {
-        @apply text-n-7 pointer-events-auto;
-    }
-    .react-datepicker .react-datepicker__day--selected {
-        @apply bg-primary-1 !text-n-1;
-    }
-    .react-datepicker .react-datepicker__day--keyboard-selected {
-        @apply bg-transparent;
-    }
-    .react-datepicker .react-datepicker__day--outside-month {
-        @apply opacity-0 invisible;
-    }
-    .react-datepicker .react-datepicker__time-container,
-    .react-datepicker
-        .react-datepicker__time-container
-        .react-datepicker__time
-        .react-datepicker__time-box {
-        @apply w-[15rem] text-left dark:bg-n-7 dark:border-n-5 !rounded-lg;
-    }
-    .react-datepicker
-        .react-datepicker__time-container
-        .react-datepicker__time {
-        @apply bg-transparent;
-    }
-    .react-datepicker .react-datepicker__header--time {
-        @apply hidden;
-    }
-    .react-datepicker .react-datepicker__time-list-item {
-        @apply transition-colors;
-    }
-    .react-datepicker
-        .react-datepicker__time-container
-        .react-datepicker__time
-        .react-datepicker__time-box
-        ul.react-datepicker__time-list
-        li.react-datepicker__time-list-item {
-        @apply pl-5 leading-normal dark:text-n-4 dark:hover:text-n-7;
-    }
-    .react-datepicker
-        .react-datepicker__time-container
-        .react-datepicker__time
-        .react-datepicker__time-box
-        ul.react-datepicker__time-list
-        li.react-datepicker__time-list-item--selected {
-        @apply bg-primary-1 text-n-1 dark:text-n-1;
-    }
+  .codex-markdown {
+    @apply text-[0.9375rem] leading-6;
+  }
 
-    .multiselect .multiselect__control {
-        @apply min-h-[3.25rem] p-0 border-2 border-n-3 rounded-xl base1 shadow-none outline-none transition-colors cursor-pointer hover:border-n-4/50 dark:bg-transparent dark:border-n-5;
-    }
-    .multiselect .multiselect__control.multiselect__control--menu-is-open {
-        @apply border-primary-1;
-    }
-    .multiselect .multiselect__value-container {
-        @apply pl-13 py-0 pr-0;
-    }
-    .multiselect-access .multiselect__value-container {
-        @apply pr-32;
-    }
-    .multiselect .multiselect__input {
-        @apply dark:!text-n-1;
-    }
-    .multiselect .multiselect__input:focus {
-        @apply md:base1;
-    }
-    .multiselect .multiselect__placeholder {
-        @apply text-n-4/50;
-    }
-    .multiselect .multiselect__value-container--has-value {
-        @apply pl-0;
-    }
-    .multiselect .multiselect__multi-value {
-        @apply m-1 p-2 rounded-lg bg-n-3/50 fill-n-4/50 transition-colors hover:!bg-primary-1 hover:text-n-1 hover:fill-n-1 dark:bg-n-6;
-    }
-    .multiselect .multiselect__multi-value__label {
-        @apply p-0 text-inherit transition-none;
-    }
-    .multiselect .multiselect__multi-value__remove {
-        @apply p-0 hover:!bg-transparent hover:scale-110;
-    }
-    .multiselect .multiselect__indicators {
-        @apply hidden;
-    }
-    .multiselect .multiselect__menu {
-        @apply z-10 mt-2 p-2 shadow-[inset_0_0_0_0.0625rem_#E8ECEF,0_0_1rem_0.25rem_rgba(0,0,0,0.04),0_2rem_2rem_-1rem_rgba(0,0,0,0.1)] rounded-xl dark:bg-n-7 dark:shadow-[inset_0_0_0_0.0625rem_#343839,0_0_1rem_0.25rem_rgba(0,0,0,0.04),0_2rem_2rem_-1rem_rgba(0,0,0,0.1)];
-    }
-    .multiselect .multiselect__menu-list {
-        @apply max-h-[12rem] p-0 overflow-auto scroll-smooth;
-    }
-    .multiselect .multiselect__option {
-        @apply flex items-center px-2 py-2.5 rounded-xl transition-colors cursor-pointer;
-    }
-    .multiselect .multiselect__option--is-focused {
-        @apply bg-n-3/50 dark:bg-n-6;
-    }
+  .codex-markdown p {
+    @apply my-2;
+  }
+
+  .codex-markdown ul {
+    @apply my-2 list-disc pl-5;
+  }
+
+  .codex-markdown ol {
+    @apply my-2 list-decimal pl-5;
+  }
+
+  .codex-markdown li {
+    @apply my-1;
+  }
+
+  .codex-markdown a {
+    @apply underline underline-offset-4;
+  }
+
+  .codex-markdown blockquote {
+    @apply my-3 border-l-2 border-border pl-4 text-muted-foreground;
+  }
+
+  .codex-markdown code {
+    @apply rounded-md px-1.5 py-0.5 font-mono text-[0.85em];
+  }
 }

@@ -1,8 +1,5 @@
-import type { NextPage } from "next";
-import CodexChatPage from "@/templates/CodexChatPage";
+import CodexApp from "@/components/codex/codex-app";
 
-const Home: NextPage = () => {
-    return <CodexChatPage />;
-};
-
-export default Home;
+export default function Home() {
+    return <CodexApp />;
+}
