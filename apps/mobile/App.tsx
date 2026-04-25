@@ -624,6 +624,7 @@ export default function App() {
         cwd: g.cwd,
         threadCount: g.threads.length,
         lastUpdated: g.lastUpdated,
+        threads: g.threads,
         data: projectCollapsed[g.cwd] ? [] : g.threads,
       })),
     [projectGroups, projectCollapsed],
@@ -1885,6 +1886,10 @@ export default function App() {
                   const isCollapsed = Boolean(projectCollapsed[section.cwd]);
                   const isActive = section.cwd === (activeCwd ?? '');
                   const canStart = section.cwd !== '(unknown)';
+                  const previewThreads: ThreadSummary[] = Array.isArray((section as any).threads)
+                    ? ((section as any).threads as ThreadSummary[])
+                    : [];
+                  const previewLimit = 3;
                   return (
                     <View style={styles.projectHeaderWrap}>
                       <View
@@ -1936,6 +1941,61 @@ export default function App() {
                             </Text>
                           </Pressable>
                         </View>
+                        {isCollapsed && previewThreads.length ? (
+                          <View style={styles.projectPreviewList}>
+                            {previewThreads.slice(0, previewLimit).map((t) => {
+                              const preview = (t.preview ?? '').trim().replace(/\s+/g, ' ');
+                              const label = preview || (t.name ?? '').trim() || '(Untitled)';
+                              const isThreadActive = t.id === activeThreadId;
+                              return (
+                                <Pressable
+                                  key={`${section.cwd}:${t.id}`}
+                                  onPress={() => confirmSelectThread(t)}
+                                  style={({ pressed }) => [
+                                    styles.projectPreviewPressable,
+                                    pressed ? styles.entryRowPressed : null,
+                                  ]}
+                                >
+                                  <View style={styles.projectPreviewRow}>
+                                    <Text
+                                      style={[
+                                        styles.projectPreviewBullet,
+                                        isThreadActive ? styles.projectPreviewBulletActive : null,
+                                      ]}
+                                    >
+                                      •
+                                    </Text>
+                                    <Text
+                                      style={[
+                                        styles.projectPreviewText,
+                                        isThreadActive ? styles.projectPreviewTextActive : null,
+                                      ]}
+                                      numberOfLines={1}
+                                    >
+                                      {label}
+                                    </Text>
+                                  </View>
+                                </Pressable>
+                              );
+                            })}
+                            {section.threadCount > previewLimit ? (
+                              <Pressable
+                                onPress={() => toggleProjectCollapse(section.cwd)}
+                                style={({ pressed }) => [
+                                  styles.projectPreviewPressable,
+                                  pressed ? styles.entryRowPressed : null,
+                                ]}
+                              >
+                                <View style={styles.projectPreviewRow}>
+                                  <Text style={styles.projectPreviewBullet}>…</Text>
+                                  <Text style={styles.projectPreviewMore} numberOfLines={1}>
+                                    {section.threadCount - previewLimit} more
+                                  </Text>
+                                </View>
+                              </Pressable>
+                            ) : null}
+                          </View>
+                        ) : null}
                       </View>
                     </View>
                   );
@@ -1970,17 +2030,6 @@ export default function App() {
                     </Pressable>
                   );
                 }}
-                renderSectionFooter={({ section }) =>
-                  projectCollapsed[section.cwd] ? (
-                    <View style={styles.projectCollapsedHintWrap}>
-                      <Text style={styles.filesHint}>
-                        {section.threadCount
-                          ? `${section.threadCount} thread${section.threadCount === 1 ? '' : 's'} hidden`
-                          : 'No threads'}
-                      </Text>
-                    </View>
-                  ) : null
-                }
               />
             ) : threadsLoading ? (
               <View style={styles.filesLoading}>
@@ -3712,6 +3761,7 @@ const styles = StyleSheet.create({
   },
   filesList: {
     paddingVertical: 8,
+    paddingHorizontal: 12,
     gap: 8,
   },
   entryRow: {
@@ -3754,6 +3804,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -3812,6 +3863,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 4,
   },
+  projectPreviewList: {
+    width: '100%',
+    marginTop: 10,
+    gap: 6,
+  },
+  projectPreviewPressable: {
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(15, 21, 36, 0.55)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(39, 50, 68, 0.9)',
+  },
+  projectPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  projectPreviewBullet: {
+    width: 14,
+    textAlign: 'center',
+    color: '#6b7280',
+    fontSize: 14,
+    marginTop: -1,
+  },
+  projectPreviewBulletActive: {
+    color: '#22c55e',
+  },
+  projectPreviewText: {
+    flex: 1,
+    minWidth: 0,
+    color: '#9ca3af',
+    fontSize: 12,
+  },
+  projectPreviewTextActive: {
+    color: '#e5e7eb',
+    fontWeight: '700',
+  },
+  projectPreviewMore: {
+    flex: 1,
+    minWidth: 0,
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   projectCollapsedHintWrap: {
     paddingHorizontal: 12,
     paddingTop: 6,
@@ -3847,15 +3943,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
     paddingHorizontal: 12,
+    paddingLeft: 18,
     paddingVertical: 12,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#273244',
     backgroundColor: '#0f1524',
-    marginLeft: 14,
   },
   threadRowLeft: {
     flex: 1,
+    minWidth: 0,
     gap: 4,
   },
   threadRowTitle: {
