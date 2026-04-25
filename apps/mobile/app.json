@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pi",
     "slug": "codex-remote-chat",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dearphilippe.codexremotechat",
-      "buildNumber": "6",
+      "buildNumber": "7",
       "infoPlist": {
         "CFBundleDisplayName": "Pi",
         "ITSAppUsesNonExemptEncryption": false,
