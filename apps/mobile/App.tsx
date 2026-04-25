@@ -157,9 +157,13 @@ const STORAGE_KEYS = {
   clientId: 'codex_remote_client_id',
   messages: 'codex_remote_messages_v1',
   autoApproveCommands: 'codex_remote_auto_approve_commands_v1',
+  threads: 'codex_remote_threads_v1',
+  threadsLastSyncedAt: 'codex_remote_threads_last_synced_at_v1',
+  projectCollapsed: 'codex_remote_project_collapsed_v1',
 } as const;
 
 const MAX_FILE_CONTEXT_CHARS = 16_000;
+const THREADS_STALE_AFTER_MS = 60_000;
 
 function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -499,6 +503,7 @@ export default function App() {
 
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [threadsLoading, setThreadsLoading] = useState(false);
+  const [threadsLastSyncedAt, setThreadsLastSyncedAt] = useState<number | null>(null);
   const [threadsSearch, setThreadsSearch] = useState('');
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [projectCollapsed, setProjectCollapsed] = useState<Record<string, boolean>>({});
@@ -542,6 +547,8 @@ export default function App() {
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const shouldReconnectRef = useRef(true);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const threadsPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const collapsedPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const candidateIndexRef = useRef(0);
   const browseRequestIdRef = useRef<string | null>(null);
   const fileRequestIdRef = useRef<string | null>(null);
@@ -552,6 +559,7 @@ export default function App() {
   const threadsRequestIdRef = useRef<string | null>(null);
   const filesWorkspaceKeyRef = useRef<string | null>(null);
   const threadsRefreshAtRef = useRef(0);
+  const threadsLastSyncedAtRef = useRef(0);
   const autoApproveCommandsRef = useRef(true);
 
   const candidateBaseUrls = useMemo(() => {
@@ -633,6 +641,9 @@ export default function App() {
       clearReconnectTimer();
       clearOpenTimeout();
       stopPing();
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+      if (threadsPersistTimerRef.current) clearTimeout(threadsPersistTimerRef.current);
+      if (collapsedPersistTimerRef.current) clearTimeout(collapsedPersistTimerRef.current);
       try {
         wsRef.current?.close();
       } catch {}
@@ -653,6 +664,9 @@ export default function App() {
       const storedClientId = await AsyncStorage.getItem(STORAGE_KEYS.clientId);
       const storedMessages = await AsyncStorage.getItem(STORAGE_KEYS.messages);
       const storedAutoApproveCommands = await AsyncStorage.getItem(STORAGE_KEYS.autoApproveCommands);
+      const storedThreads = await AsyncStorage.getItem(STORAGE_KEYS.threads);
+      const storedThreadsSyncedAt = await AsyncStorage.getItem(STORAGE_KEYS.threadsLastSyncedAt);
+      const storedProjectCollapsed = await AsyncStorage.getItem(STORAGE_KEYS.projectCollapsed);
       const urlOverrideEnabled = storedUrlOverride === '1';
       const tokenOverrideEnabled = storedTokenOverride === '1';
       const envDefault = defaultWsUrl();
@@ -691,6 +705,39 @@ export default function App() {
         } catch {}
       }
 
+      if (storedThreads) {
+        try {
+          const parsed = JSON.parse(storedThreads) as ThreadSummary[];
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter(
+              (t) =>
+                t &&
+                typeof (t as any).id === 'string' &&
+                typeof (t as any).cwd === 'string' &&
+                typeof (t as any).preview === 'string',
+            );
+            if (cleaned.length) setThreads(cleaned);
+          }
+        } catch {}
+      }
+
+      if (storedProjectCollapsed) {
+        try {
+          const parsed = JSON.parse(storedProjectCollapsed) as Record<string, boolean>;
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            setProjectCollapsed(parsed);
+          }
+        } catch {}
+      }
+
+      if (storedThreadsSyncedAt) {
+        const parsed = Number(storedThreadsSyncedAt);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          threadsLastSyncedAtRef.current = parsed;
+          setThreadsLastSyncedAt(parsed);
+        }
+      }
+
       if (storedAutoApproveCommands === '0') {
         setAutoApproveCommands(false);
       } else if (storedAutoApproveCommands === '1') {
@@ -722,13 +769,18 @@ export default function App() {
   }, [activityOpen, connState]);
 
   useEffect(() => {
+    if (!storageReady) return;
     if (!threadsOpen && !showSidebars) return;
     if (connState !== 'connected') return;
     if (threadsLoading) return;
-    if (threads.length > 0) return;
+    const now = Date.now();
+    const last = threadsLastSyncedAtRef.current;
+    const hasCache = threads.length > 0;
+    const isFresh = hasCache && last > 0 && now - last < THREADS_STALE_AFTER_MS;
+    if (isFresh) return;
     requestThreadsList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadsOpen, showSidebars, connState]);
+  }, [storageReady, threadsOpen, showSidebars, connState]);
 
   useEffect(() => {
     if (!showSidebars) return;
@@ -745,12 +797,14 @@ export default function App() {
     if (connState !== 'connected') return;
     if (!threadsOpen && !showSidebars) return;
     if (threadsLoading) return;
+    const hasThread = threads.some((t) => t.id === activeThreadId);
+    if (hasThread) return;
     const now = Date.now();
     if (now - threadsRefreshAtRef.current < 2000) return;
     threadsRefreshAtRef.current = now;
     requestThreadsList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeThreadId, connState, threadsOpen, showSidebars]);
+  }, [activeThreadId, connState, threadsOpen, showSidebars, threadsLoading, threads]);
 
   useEffect(() => {
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
@@ -758,6 +812,27 @@ export default function App() {
       AsyncStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(messages)).catch(() => {});
     }, 600);
   }, [messages]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    if (threadsPersistTimerRef.current) clearTimeout(threadsPersistTimerRef.current);
+    threadsPersistTimerRef.current = setTimeout(() => {
+      AsyncStorage.setItem(STORAGE_KEYS.threads, JSON.stringify(threads)).catch(() => {});
+      const ts = threadsLastSyncedAtRef.current;
+      if (ts) AsyncStorage.setItem(STORAGE_KEYS.threadsLastSyncedAt, String(ts)).catch(() => {});
+    }, 800);
+  }, [storageReady, threads]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    if (collapsedPersistTimerRef.current) clearTimeout(collapsedPersistTimerRef.current);
+    collapsedPersistTimerRef.current = setTimeout(() => {
+      AsyncStorage.setItem(
+        STORAGE_KEYS.projectCollapsed,
+        JSON.stringify(projectCollapsed),
+      ).catch(() => {});
+    }, 500);
+  }, [storageReady, projectCollapsed]);
 
   function stopPing() {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -924,8 +999,12 @@ export default function App() {
 
       if (msg.type === 'threads') {
         if (msg.requestId === threadsRequestIdRef.current) {
-          setThreads(Array.isArray(msg.threads) ? msg.threads : []);
+          const nextThreads = Array.isArray(msg.threads) ? msg.threads : [];
+          setThreads(nextThreads);
           setThreadsLoading(false);
+          const now = Date.now();
+          threadsLastSyncedAtRef.current = now;
+          setThreadsLastSyncedAt(now);
         }
         return;
       }
@@ -1265,9 +1344,6 @@ export default function App() {
 
   function openThreads() {
     setThreadsOpen(true);
-    if (connState === 'connected' && !threadsLoading && threads.length === 0) {
-      requestThreadsList();
-    }
   }
 
   function closeThreads() {
@@ -1736,13 +1812,15 @@ export default function App() {
                 </Pressable>
                 <Pressable
                   onPress={() => requestThreadsList()}
+                  disabled={threadsLoading}
                   style={({ pressed }) => [
                     styles.secondaryButton,
+                    threadsLoading ? styles.sendButtonDisabled : null,
                     pressed ? styles.secondaryButtonPressed : null,
                   ]}
                 >
                   <Text style={styles.secondaryButtonText}>
-                    {threadsLoading ? '…' : 'Refresh'}
+                    {threadsLoading ? 'Syncing…' : 'Refresh'}
                   </Text>
                 </Pressable>
               </View>
@@ -1771,12 +1849,7 @@ export default function App() {
               </Pressable>
             </View>
 
-            {threadsLoading ? (
-              <View style={styles.filesLoading}>
-                <ActivityIndicator color="#e5e7eb" />
-                <Text style={styles.filesHint}>Loading projects…</Text>
-              </View>
-            ) : projectSections.length ? (
+            {projectSections.length ? (
               <SectionList
                 sections={projectSections}
                 keyExtractor={(item) => item.id}
@@ -1883,6 +1956,11 @@ export default function App() {
                   ) : null
                 }
               />
+            ) : threadsLoading ? (
+              <View style={styles.filesLoading}>
+                <ActivityIndicator color="#e5e7eb" />
+                <Text style={styles.filesHint}>Loading projects…</Text>
+              </View>
             ) : (
               <View style={styles.filesLoading}>
                 <Text style={styles.filesHint}>No projects yet. Tap Refresh to sync.</Text>
