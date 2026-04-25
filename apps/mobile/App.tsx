@@ -617,18 +617,22 @@ export default function App() {
       .filter(Boolean) as typeof groups;
   }, [threads, threadsSearch]);
 
-  const projectSections = useMemo(
-    () =>
-      projectGroups.map((g) => ({
+  const projectSections = useMemo(() => {
+    const active = (activeCwd ?? '').trim();
+    return projectGroups.map((g) => {
+      const stored = projectCollapsed[g.cwd];
+      const collapsed = stored === undefined ? g.cwd !== active : Boolean(stored);
+      return {
         title: g.title,
         cwd: g.cwd,
         threadCount: g.threads.length,
         lastUpdated: g.lastUpdated,
         threads: g.threads,
-        data: projectCollapsed[g.cwd] ? [] : g.threads,
-      })),
-    [projectGroups, projectCollapsed],
-  );
+        collapsed,
+        data: collapsed ? [] : g.threads,
+      };
+    });
+  }, [projectGroups, projectCollapsed, activeCwd]);
 
   const effectiveUrlPreview = useMemo(() => {
     const baseUrl = (activeBaseUrl || wsUrl).trim();
@@ -1779,10 +1783,12 @@ export default function App() {
 
   function ProjectsSidebar({ showClose }: { showClose: boolean }) {
     function toggleProjectCollapse(cwd: string) {
-      setProjectCollapsed((prev) => ({
-        ...prev,
-        [cwd]: !prev[cwd],
-      }));
+      setProjectCollapsed((prev) => {
+        const active = (activeCwd ?? '').trim();
+        const stored = prev[cwd];
+        const collapsed = stored === undefined ? cwd !== active : Boolean(stored);
+        return { ...prev, [cwd]: !collapsed };
+      });
     }
 
     return (
@@ -1883,7 +1889,7 @@ export default function App() {
                 contentContainerStyle={styles.filesList}
                 stickySectionHeadersEnabled={false}
                 renderSectionHeader={({ section }) => {
-                  const isCollapsed = Boolean(projectCollapsed[section.cwd]);
+                  const isCollapsed = Boolean((section as any).collapsed);
                   const isActive = section.cwd === (activeCwd ?? '');
                   const canStart = section.cwd !== '(unknown)';
                   const previewThreads: ThreadSummary[] = Array.isArray((section as any).threads)
