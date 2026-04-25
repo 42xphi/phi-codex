@@ -18,6 +18,7 @@ import {
   SectionList,
   ScrollView,
   Share,
+  Switch,
   StyleSheet,
   Text,
   TextInput,
@@ -155,6 +156,7 @@ const STORAGE_KEYS = {
   tokenOverride: 'codex_remote_token_override_v1',
   clientId: 'codex_remote_client_id',
   messages: 'codex_remote_messages_v1',
+  autoApproveCommands: 'codex_remote_auto_approve_commands_v1',
 } as const;
 
 const MAX_FILE_CONTEXT_CHARS = 16_000;
@@ -479,6 +481,7 @@ export default function App() {
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequestPayload[]>([]);
+  const [autoApproveCommands, setAutoApproveCommands] = useState(true);
   const [clientId, setClientId] = useState('');
   const [healthCheck, setHealthCheck] = useState<HealthCheckState>({ status: 'idle' });
   const [updateBanner, setUpdateBanner] = useState<string | null>(null);
@@ -549,6 +552,7 @@ export default function App() {
   const threadsRequestIdRef = useRef<string | null>(null);
   const filesWorkspaceKeyRef = useRef<string | null>(null);
   const threadsRefreshAtRef = useRef(0);
+  const autoApproveCommandsRef = useRef(true);
 
   const candidateBaseUrls = useMemo(() => {
     const envList = parseWsUrlList(process.env.EXPO_PUBLIC_WS_URLS);
@@ -637,6 +641,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    autoApproveCommandsRef.current = autoApproveCommands;
+  }, [autoApproveCommands]);
+
+  useEffect(() => {
     (async () => {
       const storedUrl = await AsyncStorage.getItem(STORAGE_KEYS.wsUrl);
       const storedUrlOverride = await AsyncStorage.getItem(STORAGE_KEYS.wsUrlOverride);
@@ -644,6 +652,7 @@ export default function App() {
       const storedTokenOverride = await AsyncStorage.getItem(STORAGE_KEYS.tokenOverride);
       const storedClientId = await AsyncStorage.getItem(STORAGE_KEYS.clientId);
       const storedMessages = await AsyncStorage.getItem(STORAGE_KEYS.messages);
+      const storedAutoApproveCommands = await AsyncStorage.getItem(STORAGE_KEYS.autoApproveCommands);
       const urlOverrideEnabled = storedUrlOverride === '1';
       const tokenOverrideEnabled = storedTokenOverride === '1';
       const envDefault = defaultWsUrl();
@@ -680,6 +689,15 @@ export default function App() {
           const parsed = JSON.parse(storedMessages) as ChatMessage[];
           if (Array.isArray(parsed)) setMessages(parsed);
         } catch {}
+      }
+
+      if (storedAutoApproveCommands === '0') {
+        setAutoApproveCommands(false);
+      } else if (storedAutoApproveCommands === '1') {
+        setAutoApproveCommands(true);
+      } else {
+        setAutoApproveCommands(true);
+        await AsyncStorage.setItem(STORAGE_KEYS.autoApproveCommands, '1');
       }
 
       if (!resolvedUrl || !resolvedToken) {
@@ -931,6 +949,18 @@ export default function App() {
           detail: msg.detail,
           data: (msg as any).data,
         };
+        if (req.kind === 'command' && autoApproveCommandsRef.current) {
+          try {
+            ws.send(
+              JSON.stringify({
+                type: 'approval_response',
+                requestId: req.requestId,
+                decision: 'acceptForSession',
+              }),
+            );
+          } catch {}
+          return;
+        }
         setApprovalQueue((prev) => {
           if (prev.some((p) => p.requestId === req.requestId)) return prev;
           return [...prev, req];
@@ -1087,7 +1117,7 @@ export default function App() {
 
   function sendApprovalDecision(requestId: string, decision: 'accept' | 'acceptForSession' | 'decline' | 'cancel') {
     const ws = wsRef.current;
-    if (!ws || connState !== 'connected') {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
       setErrorBanner('Not connected. Cannot send approval decision.');
       return;
     }
@@ -1664,7 +1694,7 @@ export default function App() {
         </View>
 
         {connState !== 'connected' ? (
-          <View style={styles.modalBody}>
+	          <View style={styles.modalBody}>
             <Text style={styles.hint}>
               Not connected. Open Settings, connect to your Mac, then come back to browse Codex
               threads and workspaces.
@@ -2739,8 +2769,8 @@ export default function App() {
               placeholderTextColor="#6b7280"
             />
 
-            <Text style={styles.label}>Client ID</Text>
-            <View style={styles.filesSearchRow}>
+	            <Text style={styles.label}>Client ID</Text>
+	            <View style={styles.filesSearchRow}>
               <TextInput
                 value={clientId}
                 onChangeText={(next) => setClientId(normalizeClientIdInput(next))}
@@ -2759,12 +2789,32 @@ export default function App() {
               >
                 <Text style={styles.secondaryButtonText}>New</Text>
               </Pressable>
-            </View>
+	            </View>
 
-            <Text style={styles.hint}>
-              Tip: use the Cloudflare URL (wss://ios.phi.pe) from anywhere, or your Mac’s Tailscale
-              IP (ws://100.x.y.z:8787) when you’re on your tailnet. If your server set
-              CODEX_REMOTE_TOKEN, the token must match. Use the same Client ID on every device to
+	            <Text style={styles.label}>Approvals</Text>
+	            <View style={styles.toggleRow}>
+	              <View style={styles.toggleTextWrap}>
+	                <Text style={styles.toggleTitle}>Auto‑approve commands</Text>
+	                <Text style={styles.toggleSubtitle}>
+	                  Runs shell commands on your Mac without prompting.
+	                </Text>
+	              </View>
+	              <Switch
+	                value={autoApproveCommands}
+	                onValueChange={(next) => {
+	                  setAutoApproveCommands(next);
+	                  AsyncStorage.setItem(
+	                    STORAGE_KEYS.autoApproveCommands,
+	                    next ? '1' : '0',
+	                  ).catch(() => {});
+	                }}
+	              />
+	            </View>
+
+	            <Text style={styles.hint}>
+	              Tip: use the Cloudflare URL (wss://ios.phi.pe) from anywhere, or your Mac’s Tailscale
+	              IP (ws://100.x.y.z:8787) when you’re on your tailnet. If your server set
+	              CODEX_REMOTE_TOKEN, the token must match. Use the same Client ID on every device to
               sync the “last active” Codex thread + history.
             </Text>
 
@@ -3184,6 +3234,34 @@ const styles = StyleSheet.create({
   },
   codeOmittedTextUser: {
     color: 'rgba(255,255,255,0.85)',
+  },
+  toggleRow: {
+    marginTop: 8,
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#273244',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  toggleTextWrap: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  toggleTitle: {
+    color: '#f9fafb',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  toggleSubtitle: {
+    color: '#9ca3af',
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
   },
   messageMetaRow: {
     flexDirection: 'row',
