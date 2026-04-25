@@ -52,7 +52,7 @@ const MessageContent = ({ text }: MessageContentProps) => {
                     img: () => null,
                     pre: ({ children, ...props }: any) => (
                         <pre
-                            className="my-3 max-w-full overflow-auto rounded-xl border border-ios-separator/40 bg-ios-surface2 px-4 py-3 text-[0.85em] leading-5 text-ios-label"
+                            className="my-2 max-w-full overflow-auto text-[0.85em] leading-5 text-ios-label"
                             {...props}
                         >
                             {children}
