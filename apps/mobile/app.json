@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dearphilippe.codexremotechat",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocalNetworkUsageDescription": "Connect to your Mac-hosted Codex server on your local network or via Tailscale.",
@@ -46,7 +46,9 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/116a31ac-e969-4f66-8037-dc7870146eec"
+      "url": "https://u.expo.dev/116a31ac-e969-4f66-8037-dc7870146eec",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     }
   }
 }
