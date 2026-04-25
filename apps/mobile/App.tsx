@@ -160,10 +160,12 @@ const STORAGE_KEYS = {
   threads: 'codex_remote_threads_v1',
   threadsLastSyncedAt: 'codex_remote_threads_last_synced_at_v1',
   projectCollapsed: 'codex_remote_project_collapsed_v1',
+  lastUpdateCheckAt: 'codex_remote_last_update_check_at_v1',
 } as const;
 
 const MAX_FILE_CONTEXT_CHARS = 16_000;
 const THREADS_STALE_AFTER_MS = 60_000;
+const UPDATE_CHECK_MIN_INTERVAL_MS = 10 * 60_000;
 
 function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -759,6 +761,30 @@ export default function App() {
     connect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageReady, wsUrl, token]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    (async () => {
+      if (!Updates.isEnabled) return;
+      const now = Date.now();
+      const rawLast = await AsyncStorage.getItem(STORAGE_KEYS.lastUpdateCheckAt);
+      const last = rawLast ? Number(rawLast) : 0;
+      if (Number.isFinite(last) && last > 0 && now - last < UPDATE_CHECK_MIN_INTERVAL_MS) return;
+      await AsyncStorage.setItem(STORAGE_KEYS.lastUpdateCheckAt, String(now));
+
+      try {
+        const res = await Updates.checkForUpdateAsync();
+        if (!res.isAvailable) return;
+        setUpdateBanner('Updating…');
+        await Updates.fetchUpdateAsync();
+        await Updates.reloadAsync();
+      } catch {
+        // Silent: the app should still be usable offline.
+      } finally {
+        setUpdateBanner(null);
+      }
+    })().catch(() => {});
+  }, [storageReady]);
 
   useEffect(() => {
     if (!activityOpen) return;
