@@ -3,7 +3,7 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-    title: "Codex Remote",
+    title: "Pi",
     description: "Chat with your local Codex from anywhere (threads + files + git).",
 };
 

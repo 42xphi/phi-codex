@@ -2349,7 +2349,7 @@ export default function App() {
                 ]}
               />
               <View>
-                <Text style={styles.title}>Codex</Text>
+                <Text style={styles.title}>Pi</Text>
                 <Text style={styles.subtitle} numberOfLines={1}>
                   {connState}
                   {serverModel ? ` • ${serverModel}` : ''}
@@ -2542,7 +2542,7 @@ export default function App() {
                 value={input}
                 onChangeText={setInput}
                 style={styles.input}
-                placeholder="Message Codex…"
+                placeholder="Message Pi…"
                 placeholderTextColor="#6b7280"
                 multiline
               />

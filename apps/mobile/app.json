@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Codex Remote Chat",
+    "name": "Pi",
     "slug": "codex-remote-chat",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,8 +15,9 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dearphilippe.codexremotechat",
-      "buildNumber": "5",
+      "buildNumber": "6",
       "infoPlist": {
+        "CFBundleDisplayName": "Pi",
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocalNetworkUsageDescription": "Connect to your Mac-hosted Codex server on your local network or via Tailscale.",
         "NSAppTransportSecurity": {
