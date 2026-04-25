@@ -165,7 +165,7 @@ const STORAGE_KEYS = {
 
 const MAX_FILE_CONTEXT_CHARS = 16_000;
 const THREADS_STALE_AFTER_MS = 60_000;
-const UPDATE_CHECK_MIN_INTERVAL_MS = 10 * 60_000;
+const UPDATE_CHECK_MIN_INTERVAL_MS = 0;
 
 function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
