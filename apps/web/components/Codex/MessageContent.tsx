@@ -1,15 +1,7 @@
-import SyntaxHighlighter from "react-syntax-highlighter";
-import { srcery } from "react-syntax-highlighter/dist/cjs/styles/hljs";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeSanitize from "rehype-sanitize";
-
-function extractLanguage(className?: string) {
-    if (!className) return undefined;
-    const match = className.match(/language-([A-Za-z0-9_+-]+)/);
-    return match?.[1];
-}
 
 function isSafeHref(href: unknown) {
     if (typeof href !== "string") return false;
@@ -58,8 +50,15 @@ const MessageContent = ({ text }: MessageContentProps) => {
                         );
                     },
                     img: () => null,
-                    pre: ({ children }: any) => <>{children}</>,
-                    code: ({ inline, className, children, ...props }: any) => {
+                    pre: ({ children, ...props }: any) => (
+                        <pre
+                            className="my-3 max-w-full overflow-auto rounded-xl border border-ios-separator/40 bg-ios-surface2 px-4 py-3 text-[0.85em] leading-5 text-ios-label"
+                            {...props}
+                        >
+                            {children}
+                        </pre>
+                    ),
+                    code: ({ inline, children, ...props }: any) => {
                         const raw = String(children ?? "");
                         const code = raw.replace(/\n$/, "");
                         if (inline) {
@@ -73,28 +72,10 @@ const MessageContent = ({ text }: MessageContentProps) => {
                             );
                         }
 
-                        const lang = extractLanguage(className);
                         return (
-                            <div className="my-3 rounded-xl overflow-hidden border border-ios-separator/30 bg-n-7/90 shadow-[0_0.5rem_1.5rem_-1.25rem_rgba(0,0,0,0.45)]">
-                                <div className="px-4 py-2 bg-black/35 text-[0.75rem] leading-4 font-semibold text-white/70">
-                                    {lang ?? "code"}
-                                </div>
-                                <SyntaxHighlighter
-                                    language={lang}
-                                    style={srcery}
-                                    customStyle={{
-                                        margin: 0,
-                                        maxWidth: "100%",
-                                        padding: "0.9rem 1rem 1rem",
-                                        background: "transparent",
-                                    }}
-                                    codeTagProps={{
-                                        style: { whiteSpace: "pre-wrap" },
-                                    }}
-                                >
-                                    {code}
-                                </SyntaxHighlighter>
-                            </div>
+                            <code className="font-mono whitespace-pre" {...props}>
+                                {code}
+                            </code>
                         );
                     },
                     p: ({ children, ...props }: any) => (

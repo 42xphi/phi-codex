@@ -2249,35 +2249,17 @@ export default function App() {
                 >
                   {parseMessageBlocks(item.text).map((block, idx) =>
                     block.type === 'code' ? (
-                      <View
+                      <Text
                         key={`${item.id}:code:${idx}`}
                         style={[
-                          styles.codeBlock,
-                          item.role === 'user' ? styles.codeBlockUser : null,
+                          styles.codeText,
+                          item.role === 'user' ? styles.codeTextUser : null,
                           idx > 0 ? styles.messageBlockSpacing : null,
                         ]}
+                        selectable
                       >
-                        {block.lang ? (
-                          <Text
-                            style={[
-                              styles.codeLang,
-                              item.role === 'user' ? styles.codeLangUser : null,
-                            ]}
-                            selectable
-                          >
-                            {block.lang}
-                          </Text>
-                        ) : null}
-                        <Text
-                          style={[
-                            styles.codeText,
-                            item.role === 'user' ? styles.codeTextUser : null,
-                          ]}
-                          selectable
-                        >
-                          {block.code}
-                        </Text>
-                      </View>
+                        {block.code}
+                      </Text>
                     ) : (
                       <View
                         key={`${item.id}:text:${idx}`}
