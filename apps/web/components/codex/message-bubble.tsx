@@ -38,7 +38,7 @@ function Markdown({ text, tone }: { text: string; tone: MarkdownTone }) {
                 className={cn(
                   "rounded-md px-1.5 py-0.5 font-mono text-[0.85em]",
                   tone === "inverse"
-                    ? "bg-white/20 text-primary-foreground"
+                    ? "bg-white/20 text-white"
                     : "bg-muted text-foreground",
                   className,
                 )}
@@ -53,7 +53,7 @@ function Markdown({ text, tone }: { text: string; tone: MarkdownTone }) {
               <a
                 className={cn(
                   "underline underline-offset-4 hover:opacity-90",
-                  tone === "inverse" ? "text-primary-foreground" : "text-primary",
+                  tone === "inverse" ? "text-white" : "text-primary",
                   className,
                 )}
                 target="_blank"
@@ -78,7 +78,7 @@ export function MessageBubble({ role, text, time, streaming }: MessageBubbleProp
         className={cn(
           "max-w-[92%] rounded-2xl border px-4 py-3 shadow-sm",
           isUser
-            ? "border-primary/30 bg-primary text-primary-foreground"
+            ? "border-white/20 bg-[#007AFF] text-white"
             : "border-border bg-card text-foreground",
         )}
       >
@@ -86,7 +86,7 @@ export function MessageBubble({ role, text, time, streaming }: MessageBubbleProp
         <div
           className={cn(
             "mt-2 flex items-center gap-2 text-[0.72rem]",
-            isUser ? "text-primary-foreground/70" : "text-muted-foreground",
+            isUser ? "text-white/70" : "text-muted-foreground",
           )}
         >
           {time ? <span>{time}</span> : null}

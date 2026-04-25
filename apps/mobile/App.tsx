@@ -3332,8 +3332,8 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   bubbleUser: {
-    backgroundColor: '#2563eb',
-    borderColor: '#1d4ed8',
+    backgroundColor: '#007AFF',
+    borderColor: 'rgba(255,255,255,0.18)',
   },
   bubbleAssistant: {
     backgroundColor: '#0f1524',
