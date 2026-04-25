@@ -114,6 +114,8 @@ const STORAGE_KEYS = {
   token: "codex_remote_token",
   clientId: "codex_remote_client_id",
   projectCwd: "codex_remote_project_cwd",
+  threads: "codex_remote_threads_v1",
+  threadsLastSyncedAt: "codex_remote_threads_last_synced_at_v1",
 };
 
 function nowIso() {
@@ -161,6 +163,32 @@ function setStored(key: string, value: string) {
   } catch {}
 }
 
+const THREADS_STALE_AFTER_MS = 60_000;
+
+function loadStoredThreads(): ThreadSummary[] {
+  const raw = getStored(STORAGE_KEYS.threads);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (t) =>
+        t &&
+        typeof t.id === "string" &&
+        typeof t.cwd === "string" &&
+        typeof t.preview === "string",
+    ) as ThreadSummary[];
+  } catch {
+    return [];
+  }
+}
+
+function loadStoredThreadsSyncedAt(): number {
+  const raw = getStored(STORAGE_KEYS.threadsLastSyncedAt);
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 function buildWsUrl(base: string, token: string, clientId: string) {
   const normalized = normalizeWsBase(base);
   if (!normalized) return "";
@@ -198,8 +226,10 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
     return raw ? raw : null;
   });
 
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [threads, setThreads] = useState<ThreadSummary[]>(loadStoredThreads);
   const [threadsLoading, setThreadsLoading] = useState(false);
+  const threadsRef = useRef<ThreadSummary[]>(threads);
+  const threadsLastSyncedAtRef = useRef<number>(loadStoredThreadsSyncedAt());
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
@@ -369,8 +399,13 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
       setActiveCwd(msg.cwd);
       setProjectCwd(msg.cwd);
       setModel(msg.model);
-      // Codex is now ready; refresh derived panes.
-      refreshThreads();
+      // Only sync threads list when it's stale or we haven't cached this thread yet.
+      const cached = threadsRef.current;
+      const hasThread = cached.some((t) => t.id === msg.threadId);
+      const now = Date.now();
+      const last = threadsLastSyncedAtRef.current;
+      const isFresh = cached.length > 0 && last > 0 && now - last < THREADS_STALE_AFTER_MS;
+      if (!hasThread || !isFresh) refreshThreads();
       listDir();
       refreshGitStatus();
       return;
@@ -440,6 +475,10 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
     if (msg.type === "threads") {
       if (threadsRequestIdRef.current && msg.requestId !== threadsRequestIdRef.current) return;
       setThreads(msg.threads);
+      threadsRef.current = msg.threads;
+      const now = Date.now();
+      threadsLastSyncedAtRef.current = now;
+      setStored(STORAGE_KEYS.threadsLastSyncedAt, String(now));
       setThreadsLoading(false);
       setErrorBanner(null);
       return;
@@ -623,6 +662,11 @@ export function CodexProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setStored(STORAGE_KEYS.projectCwd, projectCwd ?? "");
   }, [projectCwd]);
+
+  useEffect(() => {
+    threadsRef.current = threads;
+    setStored(STORAGE_KEYS.threads, JSON.stringify(threads));
+  }, [threads]);
 
   const saveConnectionSettings = useCallback(() => {
     const normalizedUrl = normalizeWsBase(wsUrl);
