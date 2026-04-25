@@ -2234,92 +2234,100 @@ export default function App() {
                 )}
               </View>
             }
-            renderItem={({ item }) => (
-              <View
-                style={[
-                  styles.bubbleRow,
-                  item.role === 'user' ? styles.rowUser : styles.rowAssistant,
-                ]}
-              >
+            renderItem={({ item }) => {
+              const blocks = parseMessageBlocks(item.text).filter(
+                (block) => block.type !== 'code',
+              );
+              const hasRenderableText = blocks.some(
+                (block) => block.type === 'text' && block.text.trim().length > 0,
+              );
+
+              return (
                 <View
                   style={[
-                    styles.bubble,
-                    item.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
+                    styles.bubbleRow,
+                    item.role === 'user' ? styles.rowUser : styles.rowAssistant,
                   ]}
                 >
-                  {parseMessageBlocks(item.text).map((block, idx) =>
-                    block.type === 'code' ? (
-                      <Text
-                        key={`${item.id}:code:${idx}`}
-                        style={[
-                          styles.codeText,
-                          item.role === 'user' ? styles.codeTextUser : null,
-                          idx > 0 ? styles.messageBlockSpacing : null,
-                        ]}
-                        selectable
-                      >
-                        {block.code}
-                      </Text>
+                  <View
+                    style={[
+                      styles.bubble,
+                      item.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
+                    ]}
+                  >
+                    {hasRenderableText ? (
+                      blocks.map((block, idx) =>
+                        block.type === 'text' ? (
+                          <View
+                            key={`${item.id}:text:${idx}`}
+                            style={idx > 0 ? styles.messageBlockSpacing : null}
+                          >
+                            <Markdown
+                              style={MARKDOWN_STYLES as any}
+                              onLinkPress={(url) => {
+                                if (!url) return false;
+                                if (!isSafeMarkdownUrl(url)) return false;
+                                Linking.openURL(url).catch(() => {});
+                                return false;
+                              }}
+                              {...({
+                                allowedImageHandlers: [],
+                                defaultImageHandler: null,
+                              } as any)}
+                            >
+                              {block.text}
+                            </Markdown>
+                          </View>
+                        ) : null,
+                      )
                     ) : (
-                      <View
-                        key={`${item.id}:text:${idx}`}
-                        style={idx > 0 ? styles.messageBlockSpacing : null}
-                      >
-                        <Markdown
-                          style={MARKDOWN_STYLES as any}
-                          onLinkPress={(url) => {
-                            if (!url) return false;
-                            if (!isSafeMarkdownUrl(url)) return false;
-                            Linking.openURL(url).catch(() => {});
-                            return false;
-                          }}
-                          {...({
-                            allowedImageHandlers: [],
-                            defaultImageHandler: null,
-                          } as any)}
-                        >
-                          {block.text}
-                        </Markdown>
-                      </View>
-                    ),
-                  )}
-
-                  <View style={styles.messageMetaRow}>
-                    <Text
-                      style={[
-                        styles.messageMetaText,
-                        item.role === 'user' ? styles.messageMetaTextUser : null,
-                      ]}
-                    >
-                      {formatMessageTime(item.createdAt)}
-                    </Text>
-                    <View style={styles.messageMetaRight}>
-                      {streamingAssistantIdRef.current === item.id ? (
-                        <ActivityIndicator size="small" color="#9ca3af" />
-                      ) : null}
-                      <Pressable
-                        onPress={() => showMessageActions(item)}
-                        hitSlop={12}
-                        style={({ pressed }) => [
-                          styles.messageMetaButton,
-                          item.role === 'user' ? styles.messageMetaButtonUser : null,
-                          pressed ? styles.messageMetaButtonPressed : null,
+                      <Text
+                        style={[
+                          styles.codeOmittedText,
+                          item.role === 'user' ? styles.codeOmittedTextUser : null,
                         ]}
                       >
-                        <Text
-                          style={[
-                            styles.messageMetaButtonText,
-                            item.role === 'user' ? styles.messageMetaButtonTextUser : null,
+                        Code omitted. Open Files to view.
+                      </Text>
+                    )}
+
+                    <View style={styles.messageMetaRow}>
+                      <Text
+                        style={[
+                          styles.messageMetaText,
+                          item.role === 'user' ? styles.messageMetaTextUser : null,
+                        ]}
+                      >
+                        {formatMessageTime(item.createdAt)}
+                      </Text>
+                      <View style={styles.messageMetaRight}>
+                        {streamingAssistantIdRef.current === item.id ? (
+                          <ActivityIndicator size="small" color="#9ca3af" />
+                        ) : null}
+                        <Pressable
+                          onPress={() => showMessageActions(item)}
+                          hitSlop={12}
+                          style={({ pressed }) => [
+                            styles.messageMetaButton,
+                            item.role === 'user' ? styles.messageMetaButtonUser : null,
+                            pressed ? styles.messageMetaButtonPressed : null,
                           ]}
                         >
-                          ⋯
-                        </Text>
-                      </Pressable>
+                          <Text
+                            style={[
+                              styles.messageMetaButtonText,
+                              item.role === 'user' ? styles.messageMetaButtonTextUser : null,
+                            ]}
+                          >
+                            ⋯
+                          </Text>
+                        </Pressable>
+                      </View>
                     </View>
                   </View>
                 </View>
-              </View>
-            )}
+              );
+            }}
           />
 
           {showScrollToBottom ? (
@@ -3168,6 +3176,14 @@ const styles = StyleSheet.create({
   },
   codeTextUser: {
     color: '#f8fafc',
+  },
+  codeOmittedText: {
+    color: '#9ca3af',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  codeOmittedTextUser: {
+    color: 'rgba(255,255,255,0.85)',
   },
   messageMetaRow: {
     flexDirection: 'row',

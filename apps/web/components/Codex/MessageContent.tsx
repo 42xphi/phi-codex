@@ -50,31 +50,15 @@ const MessageContent = ({ text }: MessageContentProps) => {
                         );
                     },
                     img: () => null,
-                    pre: ({ children, ...props }: any) => (
-                        <pre
-                            className="my-2 max-w-full overflow-auto text-[0.85em] leading-5 text-ios-label"
-                            {...props}
-                        >
-                            {children}
-                        </pre>
-                    ),
+                    pre: () => null,
                     code: ({ inline, children, ...props }: any) => {
-                        const raw = String(children ?? "");
-                        const code = raw.replace(/\n$/, "");
-                        if (inline) {
-                            return (
-                                <code
-                                    className="rounded-md bg-ios-surface/70 px-1.5 py-0.5 font-mono text-[0.85em] text-current"
-                                    {...props}
-                                >
-                                    {children}
-                                </code>
-                            );
-                        }
-
+                        if (!inline) return null;
                         return (
-                            <code className="font-mono whitespace-pre" {...props}>
-                                {code}
+                            <code
+                                className="rounded-md bg-ios-surface/70 px-1.5 py-0.5 font-mono text-[0.85em] text-current"
+                                {...props}
+                            >
+                                {children}
                             </code>
                         );
                     },
