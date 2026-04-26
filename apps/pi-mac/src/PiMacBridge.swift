@@ -3,12 +3,61 @@ import ApplicationServices
 import Foundation
 import Network
 import OSAKit
+import SQLite3
 import SwiftUI
 
 private enum Defaults {
   static let portKey = "pi.bridge.port"
   static let tokenKey = "pi.bridge.token"
   static let codexPortKey = "pi.codex.port"
+  static let automationSystemEventsGrantedKey = "pi.perm.automation.system_events.granted"
+  static let automationSystemEventsDetailKey = "pi.perm.automation.system_events.detail"
+}
+
+private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+private struct TccAuthRow {
+  let authValue: Int
+  let lastModified: Int
+}
+
+private func readTccAccessibilityAuth(bundleId: String) -> TccAuthRow? {
+  let userDbPath = "\(NSHomeDirectory())/Library/Application Support/com.apple.TCC/TCC.db"
+  let systemDbPath = "/Library/Application Support/com.apple.TCC/TCC.db"
+  let candidates = [userDbPath, systemDbPath]
+
+  for dbPath in candidates {
+    guard FileManager.default.isReadableFile(atPath: dbPath) else { continue }
+
+    var db: OpaquePointer?
+    let opened: Int32 = dbPath.withCString { sqlite3_open_v2($0, &db, SQLITE_OPEN_READONLY, nil) }
+    guard opened == SQLITE_OK, let db else { continue }
+    defer { sqlite3_close(db) }
+
+    let sql = """
+    SELECT auth_value, last_modified
+    FROM access
+    WHERE service='kTCCServiceAccessibility'
+      AND client=?
+      AND client_type=0
+      AND indirect_object_identifier='UNUSED'
+    LIMIT 1;
+    """
+
+    var stmt: OpaquePointer?
+    let prepared: Int32 = sql.withCString { sqlite3_prepare_v2(db, $0, -1, &stmt, nil) }
+    guard prepared == SQLITE_OK, let stmt else { continue }
+    defer { sqlite3_finalize(stmt) }
+
+    _ = bundleId.withCString { sqlite3_bind_text(stmt, 1, $0, -1, SQLITE_TRANSIENT) }
+
+    guard sqlite3_step(stmt) == SQLITE_ROW else { continue }
+    let authValue = Int(sqlite3_column_int(stmt, 0))
+    let lastModified = Int(sqlite3_column_int(stmt, 1))
+    return TccAuthRow(authValue: authValue, lastModified: lastModified)
+  }
+
+  return nil
 }
 
 private func httpResponse(status: Int, json: Any) -> Data {
@@ -330,6 +379,9 @@ final class BridgeStore: ObservableObject {
   @Published var codexLog: String
   @Published var codexError: String?
   @Published var axTrusted: Bool
+  @Published var screenCaptureGranted: Bool
+  @Published var tccAccessibilityAuthValue: Int?
+  @Published var tccAccessibilityLastModified: Int?
   @Published var automationSystemEventsGranted: Bool?
   @Published var automationSystemEventsDetail: String
   @Published var log: String
@@ -339,6 +391,7 @@ final class BridgeStore: ObservableObject {
   private var codexProcess: Process? = nil
   private var codexOutPipe: Pipe? = nil
   private var codexErrPipe: Pipe? = nil
+  private var lastTccPoll: Date = .distantPast
 
   init() {
     let storedPort = UserDefaults.standard.integer(forKey: Defaults.portKey)
@@ -361,9 +414,18 @@ final class BridgeStore: ObservableObject {
     self.codexRunning = false
     self.codexLog = ""
     self.codexError = nil
-    self.axTrusted = AXIsProcessTrusted()
-    self.automationSystemEventsGranted = nil
-    self.automationSystemEventsDetail = "Not requested yet."
+    let axOpts: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as NSString: false]
+    self.axTrusted = AXIsProcessTrustedWithOptions(axOpts)
+    self.screenCaptureGranted = CGPreflightScreenCaptureAccess()
+    self.tccAccessibilityAuthValue = nil
+    self.tccAccessibilityLastModified = nil
+    if UserDefaults.standard.object(forKey: Defaults.automationSystemEventsGrantedKey) != nil {
+      self.automationSystemEventsGranted = UserDefaults.standard.bool(forKey: Defaults.automationSystemEventsGrantedKey)
+    } else {
+      self.automationSystemEventsGranted = nil
+    }
+    self.automationSystemEventsDetail =
+      UserDefaults.standard.string(forKey: Defaults.automationSystemEventsDetailKey) ?? "Not requested yet."
     self.log = ""
     self.error = nil
 
@@ -371,7 +433,27 @@ final class BridgeStore: ObservableObject {
   }
 
   func refreshAx() {
-    axTrusted = AXIsProcessTrusted()
+    let opts: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as NSString: false]
+    axTrusted = AXIsProcessTrustedWithOptions(opts)
+    screenCaptureGranted = CGPreflightScreenCaptureAccess()
+    if axTrusted {
+      tccAccessibilityAuthValue = nil
+      tccAccessibilityLastModified = nil
+      return
+    }
+
+    let now = Date()
+    if now.timeIntervalSince(lastTccPoll) < 5 { return }
+    lastTccPoll = now
+
+    guard let bundleId = Bundle.main.bundleIdentifier else { return }
+    if let row = readTccAccessibilityAuth(bundleId: bundleId) {
+      tccAccessibilityAuthValue = row.authValue
+      tccAccessibilityLastModified = row.lastModified
+    } else {
+      tccAccessibilityAuthValue = nil
+      tccAccessibilityLastModified = nil
+    }
   }
 
   func requestAccessibility() {
@@ -380,9 +462,37 @@ final class BridgeStore: ObservableObject {
     refreshAx()
   }
 
+  func requestScreenCapture() {
+    _ = CGRequestScreenCaptureAccess()
+    refreshAx()
+  }
+
+  func relaunch() {
+    let path = Bundle.main.bundleURL.path.replacingOccurrences(of: "\"", with: "\\\"")
+    let cmd = "sleep 0.2; /usr/bin/open \"\(path)\""
+
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/sh")
+    p.arguments = ["-c", cmd]
+    try? p.run()
+
+    NSApp.terminate(nil)
+  }
+
+  func resetAccessibilityPermission() {
+    guard let bundleId = Bundle.main.bundleIdentifier else { return }
+
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+    p.arguments = ["reset", "Accessibility", bundleId]
+    try? p.run()
+    p.waitUntilExit()
+    refreshAx()
+  }
+
   func requestAutomationForSystemEvents() {
-    automationSystemEventsGranted = nil
     automationSystemEventsDetail = "Requesting… (watch for the macOS prompt)"
+    UserDefaults.standard.set(automationSystemEventsDetail, forKey: Defaults.automationSystemEventsDetailKey)
 
     let script = """
     tell application "System Events"
@@ -401,11 +511,15 @@ final class BridgeStore: ObservableObject {
       if res.timedOut {
         automationSystemEventsGranted = false
         automationSystemEventsDetail = "Timed out waiting for permission prompt."
+        UserDefaults.standard.set(false, forKey: Defaults.automationSystemEventsGrantedKey)
+        UserDefaults.standard.set(automationSystemEventsDetail, forKey: Defaults.automationSystemEventsDetailKey)
         return
       }
       if res.exitCode == 0 {
         automationSystemEventsGranted = true
         automationSystemEventsDetail = "Granted (System Events)."
+        UserDefaults.standard.set(true, forKey: Defaults.automationSystemEventsGrantedKey)
+        UserDefaults.standard.set(automationSystemEventsDetail, forKey: Defaults.automationSystemEventsDetailKey)
         return
       }
 
@@ -417,6 +531,9 @@ final class BridgeStore: ObservableObject {
       } else {
         automationSystemEventsDetail = "Denied."
       }
+
+      UserDefaults.standard.set(false, forKey: Defaults.automationSystemEventsGrantedKey)
+      UserDefaults.standard.set(automationSystemEventsDetail, forKey: Defaults.automationSystemEventsDetailKey)
     }
   }
 
@@ -508,7 +625,17 @@ final class BridgeStore: ObservableObject {
 
     codexLog = line
     if line.contains("EADDRINUSE") {
-      codexError = "Port \(UInt16(codexPort) ?? 8787) is already in use. Change the Codex port or quit the other app."
+      let portValue = UInt16(codexPort) ?? 8787
+      codexError = "Port \(portValue) is already in use. Change the Codex port or quit the other app."
+
+      Task { [weak self] in
+        guard let self else { return }
+        if await self.isCodexServerHealthy(port: portValue) {
+          self.codexRunning = true
+          self.codexError = nil
+          self.codexLog = "Using existing server on port \(portValue)."
+        }
+      }
     }
     if codexError != nil, line.contains("[server] ws listening") {
       codexError = nil
@@ -524,6 +651,34 @@ final class BridgeStore: ObservableObject {
     codexLog = ""
     codexRunning = false
 
+    let portValue = UInt16(codexPort) ?? 8787
+
+    Task { [weak self] in
+      guard let self else { return }
+      if await self.isCodexServerHealthy(port: portValue) {
+        self.codexRunning = true
+        self.codexError = nil
+        self.codexLog = "Using existing server on port \(portValue)."
+        return
+      }
+      self.startEmbeddedCodexServer(portValue: portValue)
+    }
+  }
+
+  private func isCodexServerHealthy(port: UInt16) async -> Bool {
+    guard let url = URL(string: "http://127.0.0.1:\(port)/health") else { return false }
+    var req = URLRequest(url: url)
+    req.httpMethod = "GET"
+    req.timeoutInterval = 0.7
+    do {
+      let (_, resp) = try await URLSession.shared.data(for: req)
+      return (resp as? HTTPURLResponse)?.statusCode == 200
+    } catch {
+      return false
+    }
+  }
+
+  private func startEmbeddedCodexServer(portValue: UInt16) {
     guard let serverRoot = bundledServerRoot() else {
       codexError = "Embedded server bundle is missing."
       return
@@ -534,7 +689,6 @@ final class BridgeStore: ObservableObject {
       return
     }
 
-    let portValue = UInt16(codexPort) ?? 8787
     let requiredToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
 
     let proc = Process()
@@ -659,6 +813,12 @@ struct ContentView: View {
     }
   }
 
+  private func openScreenRecordingSettings() {
+    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+      NSWorkspace.shared.open(url)
+    }
+  }
+
   private func revealAppInFinder() {
     NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
   }
@@ -776,12 +936,46 @@ struct ContentView: View {
         }
 
         HStack {
+          Button("Request all recommended…") {
+            store.requestAccessibility()
+            store.requestScreenCapture()
+            store.requestAutomationForSystemEvents()
+          }
+          Spacer()
+          Button("Relaunch Pi") { store.relaunch() }
+        }
+
+        HStack {
           Text("Accessibility")
           Spacer()
-          Text(store.axTrusted ? "Granted" : "Not granted")
+          let tccGranted = store.tccAccessibilityAuthValue == 2
+          let statusText: String = {
+            if store.axTrusted { return "Granted" }
+            return tccGranted ? "Relaunch needed" : "Not granted"
+          }()
+          Text(statusText)
             .foregroundStyle(store.axTrusted ? Color.green : Color.orange)
           Button("Request…") { store.requestAccessibility() }
           Button("Settings") { openAccessibilitySettings() }
+          if !store.axTrusted, tccGranted {
+            Button("Relaunch") { store.relaunch() }
+            Button("Reset…") { store.resetAccessibilityPermission() }
+          }
+        }
+
+        if !store.axTrusted, store.tccAccessibilityAuthValue == 2 {
+          Text("macOS shows Accessibility enabled for Pi, but Pi still isn’t trusted. Try Relaunch first. If it stays not granted, click Reset… and grant again.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        HStack {
+          Text("Screen recording")
+          Spacer()
+          Text(store.screenCaptureGranted ? "Granted" : "Not granted")
+            .foregroundStyle(store.screenCaptureGranted ? Color.green : Color.orange)
+          Button("Request…") { store.requestScreenCapture() }
+          Button("Settings") { openScreenRecordingSettings() }
         }
 
         HStack {

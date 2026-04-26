@@ -72,7 +72,8 @@ echo "[3/6] Building app binary..."
   -framework AppKit \
   -framework Network \
   -framework OSAKit \
-  -framework ApplicationServices
+  -framework ApplicationServices \
+  -lsqlite3
 
 echo "[4/6] Packaging .app..."
 rm -rf "$APP_OUT"
