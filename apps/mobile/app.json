@@ -14,8 +14,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dearphilippe.codexremotechat",
-      "buildNumber": "7",
+      "bundleIdentifier": "com.dearphilippe.pi",
+      "buildNumber": "1",
       "infoPlist": {
         "CFBundleDisplayName": "Pi",
         "ITSAppUsesNonExemptEncryption": false,
@@ -30,7 +30,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.dearphilippe.codexremotechat",
+      "package": "com.dearphilippe.pi",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
