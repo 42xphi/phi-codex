@@ -4,6 +4,18 @@ Chat UI (Expo + Web) that talks to a Mac-hosted WebSocket server, which proxies 
 
 ## 1) Backend (Mac)
 
+### Option A: Pi macOS app (recommended)
+
+Build + install the Pi companion app (runs the WS server + optional mac automation bridge):
+
+```bash
+cd apps/pi-mac
+./build.sh
+open /Applications/Pi.app
+```
+
+### Option B: CLI
+
 From the repo root:
 
 ```bash

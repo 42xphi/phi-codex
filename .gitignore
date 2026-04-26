@@ -21,6 +21,9 @@ test-results
 # Runtime data (chat transcripts, etc.)
 server/data
 
+# Pi macOS app build artifacts
+apps/pi-mac/build
+
 *.iml
 .idea
 .vscode

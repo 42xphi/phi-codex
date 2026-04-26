@@ -5,6 +5,10 @@ import "./globals.css";
 export const metadata: Metadata = {
     title: "Pi",
     description: "Chat with your local Codex from anywhere (threads + files + git).",
+    icons: {
+        icon: "/favicon.png",
+        apple: "/apple-icon.png",
+    },
 };
 
 export default function RootLayout({
