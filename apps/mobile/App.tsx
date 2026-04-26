@@ -2357,6 +2357,8 @@ export default function App() {
                   {activeBaseUrl || wsUrl
                     ? ` • ${hostLabel((activeBaseUrl || wsUrl).trim())}`
                     : ''}
+                  {Updates.channel ? ` • ${Updates.channel}` : ''}
+                  {Updates.runtimeVersion ? ` • r${Updates.runtimeVersion}` : ''}
                 </Text>
               </View>
             </View>
